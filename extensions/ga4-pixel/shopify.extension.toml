@@ -1,0 +1,16 @@
+name = "ga4-pixel"
+type = "web_pixel_extension"
+uid = "8c382b8e-d54e-a6b4-a0e9-59fc64b64254ce875e43"
+
+runtime_context = "strict"
+
+[settings]
+type = "object"
+
+[settings.fields.accountID]
+name = "Account ID"
+description = "Account ID"
+type = "single_line_text_field"
+validations =  [
+  { name = "min", value = "1" }
+]
