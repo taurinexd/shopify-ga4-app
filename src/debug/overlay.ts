@@ -1,11 +1,22 @@
 const STYLES = `
-:host { all: initial; font-family: system-ui, sans-serif; }
+:host {
+  position: fixed !important;
+  bottom: 12px !important;
+  right: 12px !important;
+  width: 420px !important;
+  max-height: 60vh !important;
+  z-index: 2147483647 !important;
+  display: block !important;
+  font-family: system-ui, sans-serif;
+  contain: layout style;
+}
 .root {
-  position: fixed; bottom: 12px; right: 12px;
-  width: 420px; max-height: 60vh; overflow: auto;
+  width: 100%;
+  max-height: 60vh;
+  overflow: auto;
   background: #111; color: #f0f0f0;
   border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.3);
-  font-size: 12px; z-index: 2147483647;
+  font-size: 12px;
 }
 .header {
   padding: 8px 12px; background: #222;
@@ -37,13 +48,27 @@ export function initOverlay(): void {
   const header = document.createElement('div');
   header.className = 'header';
   header.innerHTML = `<strong>GA4 DataLayer Debug</strong> <span id="count">0</span>
-    <button id="copy">Copy JSON</button>`;
+    <span style="flex:1"></span>
+    <button id="copy">Copy</button>
+    <button id="clear">Clear</button>`;
   root.appendChild(header);
   const list = document.createElement('div');
   list.id = 'list';
   root.appendChild(list);
 
-  const events: Array<{ payload: unknown; valid: boolean; ts: number }> = [];
+  const STORAGE_KEY = 'ga4_debug_events';
+  const events: Array<{ payload: unknown; valid: boolean; ts: number }> = (() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  })();
+
+  function persist(): void {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(events.slice(-200)));
+    } catch {}
+  }
 
   function render(): void {
     list.innerHTML = '';
@@ -68,6 +93,11 @@ export function initOverlay(): void {
   shadow.getElementById('copy')!.addEventListener('click', () => {
     navigator.clipboard.writeText(JSON.stringify(events, null, 2));
   });
+  shadow.getElementById('clear')!.addEventListener('click', () => {
+    events.length = 0;
+    persist();
+    render();
+  });
 
   const w = window as any;
   w.dataLayer = w.dataLayer || [];
@@ -76,13 +106,17 @@ export function initOverlay(): void {
   const origPush = w.dataLayer.push.bind(w.dataLayer);
   w.dataLayer.push = (...args: unknown[]) => {
     args.forEach((p) => events.push({ payload: p, valid: true, ts: Date.now() }));
+    persist();
     render();
     return origPush(...args);
   };
   const origDebug = w.dataLayer_debug.push.bind(w.dataLayer_debug);
   w.dataLayer_debug.push = (...args: any[]) => {
     args.forEach((p) => events.push({ payload: p.payload, valid: false, ts: p.ts }));
+    persist();
     render();
     return origDebug(...args);
   };
+
+  render();
 }

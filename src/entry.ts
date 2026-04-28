@@ -30,7 +30,10 @@ async function bootstrap(): Promise<void> {
   const ctx = parseContext();
   if (!ctx) return;
 
-  const debug = location.search.includes('ga4_debug');
+  if (location.search.includes('ga4_debug')) {
+    try { sessionStorage.setItem('ga4_debug', '1'); } catch {}
+  }
+  const debug = sessionStorage.getItem('ga4_debug') === '1';
   if (debug) setDebugMode(true);
 
   applyConsentDefaults();
