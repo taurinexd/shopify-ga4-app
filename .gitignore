@@ -38,6 +38,7 @@ coverage/
 playwright-report/
 test-results/
 .playwright/
+tests/e2e/.auth/
 # Logs
 *.log
 npm-debug.log*
