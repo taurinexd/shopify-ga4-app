@@ -7,7 +7,7 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "write_products,write_pixels,read_customer_events"
 
 [app_proxy]
 url = "https://shopify-ga4-relay.vercel.app/apps/ga4-relay"
