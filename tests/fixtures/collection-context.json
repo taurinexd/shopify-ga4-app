@@ -1,0 +1,16 @@
+{
+  "gtm_id": "GTM-XYZ",
+  "currency": "EUR",
+  "page": {
+    "type": "collection",
+    "collection": {
+      "id": 100,
+      "handle": "summer-collection",
+      "title": "Summer Collection",
+      "products": [
+        { "id": 8123456789, "handle": "linen-shirt", "title": "Linen Shirt", "vendor": "Acme", "type": "Apparel", "price": 49.90 },
+        { "id": 8123456790, "handle": "cotton-pants", "title": "Cotton Pants", "vendor": "Acme", "type": "Apparel", "price": 79.00 }
+      ]
+    }
+  }
+}
