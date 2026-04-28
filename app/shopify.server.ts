@@ -5,12 +5,9 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
-import { MemorySessionStorage } from "@shopify/shopify-app-session-storage-memory";
 import prisma from "./db.server";
 
-const _sessionStorage = process.env.VERCEL
-  ? new MemorySessionStorage()
-  : new PrismaSessionStorage(prisma);
+const _sessionStorage = new PrismaSessionStorage(prisma);
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
