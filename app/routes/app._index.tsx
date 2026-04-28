@@ -1,4 +1,5 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { redirect } from "@remix-run/node";
 import {
   Page,
   Layout,
@@ -7,8 +8,10 @@ import {
   BlockStack,
   List,
   Banner,
+  Button,
+  InlineStack,
 } from "@shopify/polaris";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, Form } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 
 const PIXEL_QUERY = `#graphql
@@ -24,23 +27,81 @@ const PIXEL_CREATE_MUTATION = `#graphql
   }
 `;
 
+const PIXEL_DELETE_MUTATION = `#graphql
+  mutation WebPixelDelete($id: ID!) {
+    webPixelDelete(id: $id) {
+      deletedWebPixelId
+      userErrors { field message }
+    }
+  }
+`;
+
+async function findExistingPixelId(admin: { graphql: (q: string) => Promise<Response> }) {
+  try {
+    const resp = await admin.graphql(PIXEL_QUERY);
+    const data = (await resp.json()) as { data?: { webPixel?: { id: string } | null } };
+    return data.data?.webPixel?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function createPixel(
+  admin: { graphql: (q: string, opts?: { variables: unknown }) => Promise<Response> },
+  measurementId: string,
+) {
+  const resp = await admin.graphql(PIXEL_CREATE_MUTATION, {
+    variables: { webPixel: { settings: { accountID: measurementId } } },
+  });
+  const data = (await resp.json()) as {
+    data?: {
+      webPixelCreate?: {
+        webPixel?: { id: string } | null;
+        userErrors?: Array<{ field?: string[]; message: string; code?: string }>;
+      };
+    };
+    errors?: Array<{ message: string }>;
+  };
+  const errors = data.data?.webPixelCreate?.userErrors ?? [];
+  if (errors.length > 0) {
+    return {
+      ok: false as const,
+      message: errors.map((e) => `${e.field?.join('.') ?? 'webPixel'}: ${e.message}`).join('; '),
+    };
+  }
+  if (data.data?.webPixelCreate?.webPixel?.id) {
+    return { ok: true as const, id: data.data.webPixelCreate.webPixel.id };
+  }
+  if (data.errors?.length) {
+    return { ok: false as const, message: data.errors.map((e) => e.message).join('; ') };
+  }
+  return { ok: false as const, message: 'webPixelCreate returned no data' };
+}
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  const form = await request.formData();
+  const intent = form.get('intent');
+
+  if (intent === 'reinstall-pixel') {
+    const existingId = await findExistingPixelId(admin);
+    if (existingId) {
+      await admin.graphql(PIXEL_DELETE_MUTATION, { variables: { id: existingId } });
+    }
+    const measurementId = process.env.GA4_MEASUREMENT_ID ?? '';
+    if (measurementId) await createPixel(admin, measurementId);
+  }
+
+  return redirect('/app');
+};
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
   let pixelStatus: 'connected' | 'created' | 'error' = 'error';
   let pixelMessage = '';
 
-  let existingId: string | null = null;
-  try {
-    const existingResp = await admin.graphql(PIXEL_QUERY);
-    const existingData = (await existingResp.json()) as {
-      data?: { webPixel?: { id: string } | null };
-      errors?: Array<{ message: string }>;
-    };
-    existingId = existingData.data?.webPixel?.id ?? null;
-  } catch {
-    existingId = null;
-  }
+  const existingId = await findExistingPixelId(admin);
 
   if (existingId) {
     pixelStatus = 'connected';
@@ -56,38 +117,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     };
   }
 
-  try {
-    const createResp = await admin.graphql(PIXEL_CREATE_MUTATION, {
-      variables: { webPixel: { settings: { accountID: measurementId } } },
-    });
-    const createData = (await createResp.json()) as {
-      data?: {
-        webPixelCreate?: {
-          webPixel?: { id: string } | null;
-          userErrors?: Array<{ field?: string[]; message: string; code?: string }>;
-        };
-      };
-      errors?: Array<{ message: string }>;
-    };
-    const errors = createData.data?.webPixelCreate?.userErrors ?? [];
-    if (errors.length > 0) {
-      pixelStatus = 'error';
-      pixelMessage = errors
-        .map((e) => `${e.field?.join('.') ?? 'webPixel'}: ${e.message}`)
-        .join('; ');
-    } else if (createData.data?.webPixelCreate?.webPixel?.id) {
-      pixelStatus = 'created';
-      pixelMessage = `Pixel registered (${createData.data.webPixelCreate.webPixel.id})`;
-    } else if (createData.errors?.length) {
-      pixelStatus = 'error';
-      pixelMessage = createData.errors.map((e) => e.message).join('; ');
-    } else {
-      pixelStatus = 'error';
-      pixelMessage = 'webPixelCreate returned no data';
-    }
-  } catch (e) {
+  const result = await createPixel(admin, measurementId);
+  if (result.ok) {
+    pixelStatus = 'created';
+    pixelMessage = `Pixel registered (${result.id})`;
+  } else {
     pixelStatus = 'error';
-    pixelMessage = e instanceof Error ? e.message : String(e);
+    pixelMessage = result.message;
   }
 
   return { pixelStatus, pixelMessage };
@@ -116,6 +152,14 @@ export default function Index() {
               <Banner tone={pixelTone} title={pixelTitle}>
                 {data.pixelMessage}
               </Banner>
+              <Form method="post">
+                <input type="hidden" name="intent" value="reinstall-pixel" />
+                <InlineStack gap="200">
+                  <Button submit variant="secondary">
+                    Reinstall pixel (force fresh bundle)
+                  </Button>
+                </InlineStack>
+              </Form>
               <Banner tone="success">
                 App attiva. Configura il GTM Container ID nel theme editor.
               </Banner>
