@@ -42,11 +42,17 @@ function tsToSeconds(ts: unknown): string {
 }
 
 async function send(relayUrl: string, body: unknown): Promise<void> {
+  const payload = JSON.stringify(body);
   try {
+    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
+      const ok = navigator.sendBeacon(relayUrl, blob);
+      if (ok) return;
+    }
     await fetch(relayUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=UTF-8" },
-      body: JSON.stringify(body),
+      body: payload,
       keepalive: true,
     });
   } catch {
