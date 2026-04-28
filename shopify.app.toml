@@ -9,6 +9,11 @@ embedded = true
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_products"
 
+[app_proxy]
+url = "https://example.com/apps/ga4-relay"
+subpath = "ga4-relay"
+prefix = "apps"
+
 [webhooks]
 api_version = "2026-07"
 
