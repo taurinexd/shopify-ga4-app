@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "build": "remix vite:build",
+    "build:ext": "vite build --config vite.ext.config.ts",
     "dev": "shopify app dev",
+    "dev:ext": "vite build --watch --config vite.ext.config.ts",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
@@ -13,7 +15,14 @@
     "docker-start": "npm run setup && npm run start",
     "setup": "prisma generate && prisma migrate deploy",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
+    "lint:src": "eslint src extensions tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck:src": "tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p extensions/ga4-pixel/tsconfig.json",
     "shopify": "shopify",
+    "shopify:dev": "shopify app dev",
+    "shopify:deploy:dry": "shopify app deploy --dry-run",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite"
@@ -30,6 +39,7 @@
     "@remix-run/react": "^2.16.1",
     "@remix-run/serve": "^2.16.1",
     "@shopify/app-bridge-react": "^4.1.6",
+    "@shopify/cli": "3.94.2",
     "@shopify/polaris": "^12.0.0",
     "@shopify/shopify-app-remix": "^4.1.0",
     "@shopify/shopify-app-session-storage-prisma": "^8.0.0",
@@ -38,21 +48,28 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "vite-tsconfig-paths": "^5.0.1",
-    "@shopify/cli": "3.94.2"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
     "@remix-run/eslint-config": "^2.16.1",
     "@remix-run/route-config": "^2.16.1",
     "@shopify/api-codegen-preset": "^1.1.1",
     "@types/eslint": "^9.6.1",
-    "@types/node": "^22.2.0",
+    "@types/node": "^22.19.17",
     "@types/react": "^18.2.31",
     "@types/react-dom": "^18.2.14",
-    "eslint": "^8.42.0",
-    "eslint-config-prettier": "^10.0.1",
-    "prettier": "^3.2.4",
-    "typescript": "^5.2.2",
-    "vite": "^6.2.2"
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "^20.9.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.2",
+    "vitest": "^4.1.5"
   },
   "workspaces": [
     "extensions/*"
@@ -65,14 +82,14 @@
     "@graphql-codegen/client-preset": "4.7.0",
     "@graphql-codegen/typescript-operations": "4.5.0",
     "minimatch": "9.0.5",
-    "vite": "^6.2.2"
+    "vite": "^6.4.2"
   },
   "overrides": {
     "@graphql-tools/url-loader": "8.0.16",
     "@graphql-codegen/client-preset": "4.7.0",
     "@graphql-codegen/typescript-operations": "4.5.0",
     "minimatch": "9.0.5",
-    "vite": "^6.2.2"
+    "vite": "^6.4.2"
   },
   "author": "matteomorena"
 }
