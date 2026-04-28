@@ -1,0 +1,18 @@
+{
+  "gtm_id": "GTM-XYZ",
+  "currency": "EUR",
+  "page": {
+    "type": "product",
+    "product": {
+      "id": 8123456789,
+      "title": "Linen Shirt",
+      "vendor": "Acme",
+      "type": "Apparel",
+      "tags": ["summer", "shirt"],
+      "variants": [
+        { "id": 100, "title": "M / Blue", "price": 49.90, "sku": "LS-M-BL" },
+        { "id": 101, "title": "L / Blue", "price": 49.90, "sku": "LS-L-BL" }
+      ]
+    }
+  }
+}
