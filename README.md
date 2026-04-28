@@ -12,6 +12,10 @@ npm run shopify:dev
 
 `shopify app dev` linka l'app al dev store, crea un tunnel, deploya le extension. Nel dev store admin: Online Store → Themes → Customize → App embeds → toggle ON "GA4 Data Layer" e impostare GTM Container ID.
 
+### 1.1 Dev store di riferimento
+
+L'app è stata sviluppata e validata live su `ga4-challenge-dev.myshopify.com` (Dawn theme, 13 prodotti, 1 multi-variante 5 colori, valuta EUR, Bogus Gateway). Per riprodurre in autonomia su un nuovo dev store, eseguire `shopify app dev`, attivare il block embed, aprire qualsiasi PLP/PDP/cart con il flag `?ga4_debug=1` per attivare l'overlay debug in shadow DOM (bottom-right).
+
 ## 2. Comandi utili
 
 | Comando | Scopo |
@@ -244,8 +248,21 @@ Format: **problema** → **analisi** → **soluzione**.
   - **Problema:** spec/plan iniziale assumeva solo `<variant-selects>` (Dawn standard); dev store ha theme sample che usa `<variant-radios>`.
   - **Soluzione:** selector multi-component `'variant-selects, variant-radios'` in `src/adapters/variant-observer.ts`. Fallback `MutationObserver` su `input[name="id"]` per altri temi.
 
+- **Overlay invisibile in shadow DOM su browser Chromium-derivati**
+  - **Problema:** `:host { all: initial }` resettava `display`/`position` causando `getBoundingClientRect()` 0×0 anche con `position: fixed` sul figlio.
+  - **Soluzione:** ho spostato position/sizing direttamente sul `:host` con `!important` + `contain: layout style` per isolamento dal tema. Verificato su Comet (Chromium fork).
+
+- **`view_item` duplicato sull'inizializzazione PDP**
+  - **Problema:** bootstrap emetteva `view_item` iniziale, poi il `MutationObserver` su `input[name="id"]` rifiravano per il valore corrente al mount → 2 push identici.
+  - **Soluzione:** `observeVariantChange` accetta `initialVariantId` per il dedup, e tiene `lastFired` per scartare ri-emissioni con stesso ID. Vedi `src/adapters/variant-observer.ts`.
+
+- **`remove_from_cart` non catturato dal cart Dawn**
+  - **Problema:** `cart-remove-button` di Dawn non espone `data-variant-id`, quindi il delegate non poteva popolare `pendingUserActions` → handleCartChange skippava il diff.
+  - **Soluzione:** fallback temporale 3s (`recentRemoveClickTs`) — qualsiasi click su un selector di remove segna il flag, e `hasPendingUserAction` lo consuma se il diff cart arriva entro la finestra. Mantiene la protezione anti-falsi-positivi delle discount/bundle apps.
+
 ## 10. Cose non chiuse
 
+- **Validazione end-to-end `begin_checkout` + `purchase`** — l'App Pixel gira nel Strict sandbox del checkout e POSTa al relay Remix che oggi è raggiungibile **solo via tunnel cloudflared `shopify app dev`**. I 6 eventi storefront sono stati validati live sul dev store `ga4-challenge-dev.myshopify.com` via debug overlay; i 2 eventi checkout richiedono deploy production del relay (Vercel/Fly + dominio stabile + `application_url` aggiornato in `shopify.app.toml`) — la pipeline è scritta, testata in unit + e2e (Playwright copre fino al `cart.attributes.ga4_cid`), ma non eseguita end-to-end contro GA4 DebugView.
 - **Copertura `sendBeacon`** — usato da alcune Cart API third-party, edge case raro, non coperto. Documentato.
 - **Compatibilità Horizon** — non testata empiricamente (Horizon = nuovo reference theme Shopify 2026). Fallback `MutationObserver` dovrebbe coprire.
 - **Rate limit in-memory** — sufficiente per challenge / single-instance. Produzione multi-instance richiede Redis/Upstash.
