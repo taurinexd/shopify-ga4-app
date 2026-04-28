@@ -60,11 +60,12 @@ async function bootstrap(): Promise<void> {
       break;
     case 'product': {
       const initial = buildViewItem(ctx, null);
+      const initialVariantId = (document.querySelector<HTMLInputElement>('input[name="id"]')?.value) ?? null;
       if (initial) safePush(initial);
       observeVariantChange((variantId) => {
         const updated = buildViewItem(ctx, variantId);
         if (updated) safePush(updated);
-      });
+      }, initialVariantId);
       break;
     }
     case 'cart': {

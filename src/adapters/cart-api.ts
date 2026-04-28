@@ -9,13 +9,24 @@ export interface CartInterceptorHooks {
 }
 
 const pendingUserActions = new Set<string>();
+let recentRemoveClickTs = 0;
+const REMOVE_FALLBACK_WINDOW_MS = 3000;
 export function addPendingUserAction(variantId: string): void {
   pendingUserActions.add(variantId);
 }
+export function markRemoveClick(): void {
+  recentRemoveClickTs = Date.now();
+}
 export function hasPendingUserAction(variantId: string, consume: boolean): boolean {
-  const has = pendingUserActions.has(variantId);
-  if (has && consume) pendingUserActions.delete(variantId);
-  return has;
+  if (pendingUserActions.has(variantId)) {
+    if (consume) pendingUserActions.delete(variantId);
+    return true;
+  }
+  if (Date.now() - recentRemoveClickTs < REMOVE_FALLBACK_WINDOW_MS) {
+    if (consume) recentRemoveClickTs = 0;
+    return true;
+  }
+  return false;
 }
 
 function urlOf(input: RequestInfo | URL): string {
@@ -115,9 +126,10 @@ function installUserActionDelegate(): void {
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
     const removeBtn = target?.closest<HTMLElement>(
-      '[data-cart-remove], a[href*="quantity=0"], button[name="remove"]'
+      '[data-cart-remove], a[href*="quantity=0"], button[name="remove"], cart-remove-button a'
     );
     if (!removeBtn) return;
+    markRemoveClick();
     const variantId = removeBtn.dataset.variantId
       || removeBtn.closest<HTMLElement>('[data-variant-id]')?.dataset.variantId;
     if (variantId) addPendingUserAction(variantId);

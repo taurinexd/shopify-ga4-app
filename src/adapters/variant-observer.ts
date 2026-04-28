@@ -4,11 +4,20 @@ const DEBOUNCE_MS = 150;
 // Both fire native 'change' on the element when a variant is picked.
 const VARIANT_COMPONENT_SELECTOR = 'variant-selects, variant-radios';
 
-export function observeVariantChange(callback: (variantId: string | null) => void): void {
+export function observeVariantChange(
+  callback: (variantId: string | null) => void,
+  initialVariantId: string | null = null,
+): void {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastFired: string | null = initialVariantId;
   const fire = (variantId: string | null) => {
+    if (variantId === lastFired) return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => callback(variantId), DEBOUNCE_MS);
+    timer = setTimeout(() => {
+      if (variantId === lastFired) return;
+      lastFired = variantId;
+      callback(variantId);
+    }, DEBOUNCE_MS);
   };
 
   const variantComponent = document.querySelector(VARIANT_COMPONENT_SELECTOR);

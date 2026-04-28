@@ -70,9 +70,21 @@ export function initOverlay(): void {
     } catch {}
   }
 
+  const SYSTEM_EVENTS = new Set(['gtm.js']);
+  function isSystemPayload(p: unknown): boolean {
+    if (Array.isArray(p) && p[0] === 'consent') return true;
+    if (typeof p === 'object' && p !== null) {
+      const o = p as Record<string, unknown>;
+      if (typeof o.ga4_client_id === 'string' && Object.keys(o).length === 1) return true;
+      if (typeof o.event === 'string' && SYSTEM_EVENTS.has(o.event)) return true;
+    }
+    return false;
+  }
+
   function render(): void {
     list.innerHTML = '';
-    events.slice().reverse().forEach((e) => {
+    const visible = events.filter((e) => !isSystemPayload(e.payload));
+    visible.slice().reverse().forEach((e) => {
       const row = document.createElement('div');
       row.className = `row ${e.valid ? '' : 'invalid'}`;
       const name = (e.payload as any)?.event ?? '<unknown>';
@@ -87,7 +99,7 @@ export function initOverlay(): void {
       });
       list.appendChild(row);
     });
-    (shadow.getElementById('count') as HTMLElement).textContent = String(events.length);
+    (shadow.getElementById('count') as HTMLElement).textContent = String(visible.length);
   }
 
   shadow.getElementById('copy')!.addEventListener('click', () => {
@@ -102,6 +114,15 @@ export function initOverlay(): void {
   const w = window as any;
   w.dataLayer = w.dataLayer || [];
   w.dataLayer_debug = w.dataLayer_debug || [];
+
+  const seenTs = new Set(events.map((e) => e.ts));
+  const now = Date.now();
+  (w.dataLayer as unknown[]).forEach((p, i) => {
+    const ts = now - (w.dataLayer.length - i);
+    if (seenTs.has(ts)) return;
+    events.push({ payload: p, valid: true, ts });
+  });
+  persist();
 
   const origPush = w.dataLayer.push.bind(w.dataLayer);
   w.dataLayer.push = (...args: unknown[]) => {
