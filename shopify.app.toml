@@ -5,28 +5,28 @@ name = "ga4-datalayer"
 application_url = "https://shopify-ga4-relay.vercel.app"
 embedded = true
 
-[access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_pixels,read_customer_events"
-
-[app_proxy]
-url = "https://shopify-ga4-relay.vercel.app/apps/ga4-relay"
-subpath = "ga4-relay"
-prefix = "apps"
+[build]
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-07"
 
   [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
   uri = "/webhooks/app/uninstalled"
   topics = [ "app/uninstalled" ]
 
-  [[webhooks.subscriptions]]
-  uri = "/webhooks/app/scopes_update"
-  topics = [ "app/scopes_update" ]
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customer_events,write_pixels,write_products"
 
 [auth]
 redirect_urls = [ "https://shopify-ga4-relay.vercel.app/api/auth" ]
 
-[build]
-automatically_update_urls_on_dev = false
+[app_proxy]
+url = "https://shopify-ga4-relay.vercel.app/apps/ga4-relay"
+subpath = "ga4-relay"
+prefix = "apps"
