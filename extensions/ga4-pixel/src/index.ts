@@ -66,7 +66,10 @@ register(({ analytics, init }) => {
     cidAttr?.value ??
     `pixel-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  const shop: string = initAny?.context?.document?.location?.host ?? "";
+  const shop: string =
+    initAny?.data?.shop?.myshopifyDomain ??
+    initAny?.context?.document?.location?.host ??
+    "";
   const relayUrl = `https://${shop}/apps/ga4-relay/collect`;
 
   // TODO(PT22): derive consent dynamically from cart attributes / customerPrivacy
