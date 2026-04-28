@@ -30,35 +30,60 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let pixelStatus: 'connected' | 'created' | 'error' = 'error';
   let pixelMessage = '';
 
+  let existingId: string | null = null;
   try {
     const existingResp = await admin.graphql(PIXEL_QUERY);
     const existingData = (await existingResp.json()) as {
       data?: { webPixel?: { id: string } | null };
+      errors?: Array<{ message: string }>;
     };
-    if (existingData.data?.webPixel?.id) {
-      pixelStatus = 'connected';
-      pixelMessage = `pixel already registered (${existingData.data.webPixel.id})`;
-    } else {
-      const measurementId = process.env.GA4_MEASUREMENT_ID ?? '';
-      const createResp = await admin.graphql(PIXEL_CREATE_MUTATION, {
-        variables: { webPixel: { settings: JSON.stringify({ accountID: measurementId }) } },
-      });
-      const createData = (await createResp.json()) as {
-        data?: {
-          webPixelCreate?: {
-            webPixel?: { id: string } | null;
-            userErrors?: Array<{ field: string[]; message: string }>;
-          };
+    existingId = existingData.data?.webPixel?.id ?? null;
+  } catch {
+    existingId = null;
+  }
+
+  if (existingId) {
+    pixelStatus = 'connected';
+    pixelMessage = `Pixel already registered (${existingId})`;
+    return { pixelStatus, pixelMessage };
+  }
+
+  const measurementId = process.env.GA4_MEASUREMENT_ID ?? '';
+  if (!measurementId) {
+    return {
+      pixelStatus: 'error' as const,
+      pixelMessage: 'GA4_MEASUREMENT_ID env var is not set',
+    };
+  }
+
+  try {
+    const createResp = await admin.graphql(PIXEL_CREATE_MUTATION, {
+      variables: { webPixel: { settings: { accountID: measurementId } } },
+    });
+    const createData = (await createResp.json()) as {
+      data?: {
+        webPixelCreate?: {
+          webPixel?: { id: string } | null;
+          userErrors?: Array<{ field?: string[]; message: string; code?: string }>;
         };
       };
-      const errors = createData.data?.webPixelCreate?.userErrors ?? [];
-      if (errors.length > 0) {
-        pixelStatus = 'error';
-        pixelMessage = errors.map((e) => `${e.field.join('.')}: ${e.message}`).join('; ');
-      } else if (createData.data?.webPixelCreate?.webPixel?.id) {
-        pixelStatus = 'created';
-        pixelMessage = `pixel registered (${createData.data.webPixelCreate.webPixel.id})`;
-      }
+      errors?: Array<{ message: string }>;
+    };
+    const errors = createData.data?.webPixelCreate?.userErrors ?? [];
+    if (errors.length > 0) {
+      pixelStatus = 'error';
+      pixelMessage = errors
+        .map((e) => `${e.field?.join('.') ?? 'webPixel'}: ${e.message}`)
+        .join('; ');
+    } else if (createData.data?.webPixelCreate?.webPixel?.id) {
+      pixelStatus = 'created';
+      pixelMessage = `Pixel registered (${createData.data.webPixelCreate.webPixel.id})`;
+    } else if (createData.errors?.length) {
+      pixelStatus = 'error';
+      pixelMessage = createData.errors.map((e) => e.message).join('; ');
+    } else {
+      pixelStatus = 'error';
+      pixelMessage = 'webPixelCreate returned no data';
     }
   } catch (e) {
     pixelStatus = 'error';
