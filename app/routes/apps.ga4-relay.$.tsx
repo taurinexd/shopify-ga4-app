@@ -63,7 +63,8 @@ export async function action({ request }: ActionFunctionArgs): Promise<Response>
 
   let body: RelayPayload;
   try {
-    body = (await request.json()) as RelayPayload;
+    const raw = await request.text();
+    body = JSON.parse(raw) as RelayPayload;
   } catch {
     return new Response('Bad Request', { status: 400 });
   }
