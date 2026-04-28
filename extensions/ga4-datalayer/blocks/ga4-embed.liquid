@@ -1,0 +1,22 @@
+{% comment %}
+  GA4 Data Layer — App Embed block (placeholder)
+  This is a smoke-test version. The full Liquid context handoff and asset script
+  injection will be implemented in PT18.
+{% endcomment %}
+<script>console.log('[ga4-datalayer] embed block loaded');</script>
+
+{% schema %}
+{
+  "name": "GA4 Data Layer",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "gtm_id",
+      "label": "GTM Container ID",
+      "info": "Es. GTM-XXXXXXX. Lasciare vuoto disattiva GTM ma il dataLayer continua a popolarsi.",
+      "default": ""
+    }
+  ]
+}
+{% endschema %}
