@@ -1,0 +1,13 @@
+{
+  "id": 41234567890,
+  "product_id": 8123456789,
+  "variant_id": 100,
+  "title": "Linen Shirt",
+  "variant_title": "M / Blue",
+  "vendor": "Acme",
+  "product_type": "Apparel",
+  "price": 4990,
+  "quantity": 1,
+  "final_line_price": 4990,
+  "currency": "EUR"
+}
