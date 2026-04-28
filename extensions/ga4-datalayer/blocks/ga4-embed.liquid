@@ -1,9 +1,57 @@
 {% comment %}
-  GA4 Data Layer — App Embed block (placeholder)
-  This is a smoke-test version. The full Liquid context handoff and asset script
-  injection will be implemented in PT18.
+  GA4 Data Layer — App Embed block
+  Renders: <script id="ga4-context"> + <script src="ga4-datalayer.js">
 {% endcomment %}
-<script>console.log('[ga4-datalayer] embed block loaded');</script>
+
+<script type="application/json" id="ga4-context">
+{
+  "gtm_id": {{ block.settings.gtm_id | json }},
+  "currency": {{ cart.currency.iso_code | json }},
+  "shop": {{ shop.permanent_domain | json }},
+  "page": {
+    "type": {{ template | json }}
+    {%- if template contains 'product' and product %},
+    "product": {
+      "id": {{ product.id | json }},
+      "title": {{ product.title | json }},
+      "vendor": {{ product.vendor | json }},
+      "type": {{ product.type | json }},
+      "tags": {{ product.tags | json }},
+      "variants": [
+        {%- for v in product.variants %}
+        {
+          "id": {{ v.id | json }},
+          "title": {{ v.title | json }},
+          "price": {{ v.price | divided_by: 100.0 | json }},
+          "sku": {{ v.sku | json }}
+        }{% unless forloop.last %},{% endunless %}
+        {%- endfor %}
+      ]
+    }
+    {%- elsif template contains 'collection' and collection %},
+    "collection": {
+      "id": {{ collection.id | json }},
+      "handle": {{ collection.handle | json }},
+      "title": {{ collection.title | json }},
+      "products": [
+        {%- for p in collection.products %}
+        {
+          "id": {{ p.id | json }},
+          "handle": {{ p.handle | json }},
+          "title": {{ p.title | json }},
+          "vendor": {{ p.vendor | json }},
+          "type": {{ p.type | json }},
+          "price": {{ p.price | divided_by: 100.0 | json }}
+        }{% unless forloop.last %},{% endunless %}
+        {%- endfor %}
+      ]
+    }
+    {%- endif %}
+  }
+}
+</script>
+
+<script src="{{ 'ga4-datalayer.js' | asset_url }}" defer></script>
 
 {% schema %}
 {
