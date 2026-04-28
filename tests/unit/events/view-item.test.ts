@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildViewItem } from '../../../src/events/view-item.ts';
+import { buildViewItem } from '../../../src/events/view-item';
 import productCtx from '../../fixtures/product-context.json';
 
 describe('buildViewItem', () => {

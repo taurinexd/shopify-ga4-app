@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { applyConsentDefaults, updateConsent, getConsentState } from '../../src/datalayer/consent';
 
 describe('Consent Mode v2', () => {
