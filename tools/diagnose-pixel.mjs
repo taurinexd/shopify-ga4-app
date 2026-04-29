@@ -1,7 +1,10 @@
 import { chromium } from "@playwright/test";
+import fs from "node:fs";
 
 const STORE_URL = "https://ga4-challenge-dev.myshopify.com";
 const STOREFRONT_PASSWORD = "thauly";
+const RELAY_BODY_DUMP = "/tmp/relay-bodies.jsonl";
+fs.writeFileSync(RELAY_BODY_DUMP, "");
 
 (async () => {
   const browser = await chromium.launch({
@@ -40,7 +43,15 @@ const STOREFRONT_PASSWORD = "thauly";
     if (isVercel || isGA4 || isGTM) {
       console.log(`[REQ ] ${req.method()} ${u.slice(0, 200)}`);
       const post = req.postData();
-      if (post) console.log(`       body: ${post.slice(0, 300)}`);
+      if (post) {
+        const isOurRelay = u.includes('shopify-ga4-relay.vercel.app/api/collect');
+        if (isOurRelay) {
+          fs.appendFileSync(RELAY_BODY_DUMP, post + "\n");
+          console.log(`       body: (dumped to ${RELAY_BODY_DUMP}, ${post.length} bytes)`);
+        } else {
+          console.log(`       body: ${post.slice(0, 300)}`);
+        }
+      }
     }
   });
 

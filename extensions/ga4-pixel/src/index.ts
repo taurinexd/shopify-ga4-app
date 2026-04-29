@@ -106,6 +106,16 @@ register(({ analytics, init, customerPrivacy: privacyApi }) => {
   // server-side.
   const relayUrl = "https://shopify-ga4-relay.vercel.app/api/collect";
 
+  // GA4 expects session_id to be stable across all events in the same
+  // user session. Generating a new session_id per event (via the
+  // checkout_started/checkout_completed timestamps) makes GA4 treat each
+  // event as a session boundary, which in practice triggers silent drops
+  // when multiple purchases share the same client_id (e.g. repeated
+  // tests on a dev store). Snapshot once at register() time and reuse
+  // across both subscribe callbacks; each fresh pixel sandbox load
+  // produces a new stable session_id, which is the correct behavior.
+  const sessionId = String(Math.floor(Date.now() / 1000));
+
   const newNonce = (): string =>
     `n-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -148,7 +158,7 @@ register(({ analytics, init, customerPrivacy: privacyApi }) => {
           params: {
             currency: checkout.currencyCode,
             value: Number(checkout.totalPrice?.amount ?? 0),
-            session_id: tsToSeconds(evAny.timestamp),
+            session_id: sessionId,
             engagement_time_msec: 100,
             items: lineItemsToMP(checkout.lineItems ?? []),
           },
@@ -178,7 +188,7 @@ register(({ analytics, init, customerPrivacy: privacyApi }) => {
             tax: Number(checkout.totalTax?.amount ?? 0),
             shipping: Number(checkout.shippingLine?.price?.amount ?? 0),
             coupon: checkout.discountApplications?.[0]?.title,
-            session_id: tsToSeconds(evAny.timestamp),
+            session_id: sessionId,
             engagement_time_msec: 100,
             items: lineItemsToMP(checkout.lineItems ?? []),
           },
