@@ -421,6 +421,26 @@ export async function action({
   const consent = normalizeConsent(body.consent);
   if (consent) mpBody.consent = consent;
 
+  // Dev-only: when GA4_DUMP_PAYLOAD=1 is set, log the exact mpBody being
+  // forwarded so we can correlate silent drops with field values that
+  // /mp/collect accepts (204) but post-ingest filters out (e.g. null
+  // params). Off in production — payloads contain item-level commerce
+  // data that shouldn't appear in stdout indefinitely.
+  if (process.env.GA4_DUMP_PAYLOAD === '1') {
+    emit({
+      level: 'info',
+      msg: 'mp_body_dump',
+      request_id: requestId,
+      shop,
+      client_id: clientId,
+      event_names: eventNames,
+      event_count: eventNames.length,
+      status: 0,
+      total_ms: Date.now() - t0,
+      reason: JSON.stringify(mpBody).slice(0, 4000),
+    });
+  }
+
   const tForwardStart = Date.now();
   let forwardStatus = 0;
   try {
