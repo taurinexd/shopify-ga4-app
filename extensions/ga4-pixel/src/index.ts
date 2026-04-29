@@ -30,6 +30,29 @@ function lineItemsToMP(lines: any[]): MPItem[] {
   }));
 }
 
+type CustomerPrivacy = {
+  analyticsProcessingAllowed?: boolean;
+  marketingAllowed?: boolean;
+  preferencesProcessingAllowed?: boolean;
+  saleOfDataAllowed?: boolean;
+};
+
+function consentFromPrivacy(cp: CustomerPrivacy | undefined): {
+  ad_storage: "granted" | "denied";
+  ad_user_data: "granted" | "denied";
+  ad_personalization: "granted" | "denied";
+  analytics_storage: "granted" | "denied";
+} {
+  const marketing = cp?.marketingAllowed === true;
+  const analytics = cp?.analyticsProcessingAllowed === true;
+  return {
+    ad_storage: marketing ? "granted" : "denied",
+    ad_user_data: marketing ? "granted" : "denied",
+    ad_personalization: marketing ? "granted" : "denied",
+    analytics_storage: analytics ? "granted" : "denied",
+  };
+}
+
 function tsToSeconds(ts: unknown): string {
   // Shopify pixel `event.timestamp` is documented as an ISO 8601 string;
   // coerce defensively to epoch seconds (also tolerate numeric runtimes).
@@ -86,17 +109,32 @@ register(({ analytics, init }) => {
   const newNonce = (): string =>
     `n-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  // Map Shopify's customerPrivacy flags to GA4 Consent Mode v2 signals.
-  // The relay normalises casing; we send lowercase here to match how the
-  // pixel initialised consent on the storefront and avoid divergence.
-  const privacy = (init as { customerPrivacy?: Record<string, boolean> }).customerPrivacy;
-  const marketingAllowed = privacy?.marketingAllowed === true;
-  const consent = {
-    // ad_user_data covers sending the user's data to Google for ads.
-    ad_user_data: marketingAllowed ? "granted" : "denied",
-    // ad_personalization covers using that data for personalised ads.
-    ad_personalization: marketingAllowed ? "granted" : "denied",
-  };
+  // Map Shopify's customerPrivacy to GA4 Consent Mode v2 signals.
+  // Lowercase here for readability; the relay (api.collect.tsx) normalises
+  // to UPPERCASE, which GA4 MP requires (any other casing is silently
+  // dropped, no error returned).
+  //
+  // Mapping:
+  //   marketingAllowed         -> ad_storage, ad_user_data, ad_personalization
+  //   analyticsProcessingAllowed -> analytics_storage
+  // The pixel itself only loads when analyticsProcessingAllowed is true,
+  // so analytics_storage will almost always be 'granted' here — but GA4
+  // still wants the explicit signal, otherwise sessions get routed
+  // through cookieless modeling and conversions are understated.
+  let consent = consentFromPrivacy(init.customerPrivacy);
+
+  // Re-evaluate when the buyer changes their mind mid-session via a CMP
+  // banner. `visitorConsentCollected` is the canonical event Shopify
+  // emits; we update the closure so the next subscribe callback uses the
+  // fresh signals.
+  analytics.subscribe(
+    "visitor_consent_collected",
+    (e) => {
+      const next = (e as { customerPrivacy?: typeof init.customerPrivacy })
+        .customerPrivacy;
+      if (next) consent = consentFromPrivacy(next);
+    },
+  );
 
   analytics.subscribe("checkout_started", async (event) => {
     const evAny = event as any;
