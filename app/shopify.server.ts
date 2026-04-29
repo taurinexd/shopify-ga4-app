@@ -9,6 +9,21 @@ import prisma from "./db.server";
 
 const _sessionStorage = new PrismaSessionStorage(prisma);
 
+// PrismaSessionStorage's constructor kicks off an async `pollForTable()`
+// (a `prisma.session.count()` probe with retries) and stores the
+// resulting promise on `.ready`. When the Neon pool is paused or
+// saturated the probe rejects, and because nothing awaits `.ready` from
+// non-Shopify routes (e.g. the GA4 relay at /api/collect), Node treats
+// it as an unhandled rejection and the Vercel function returns
+// responseStatusCode: 0 — events from the pixel never reach GA4 MP
+// despite the in-flight `keepalive` fetch reporting 204 to the worker.
+// Attach a no-op terminal handler so the rejection is "handled". Code
+// paths that genuinely need the table (admin auth, webhooks) still
+// `await sessionStorage.ready` and will fail loudly there as before.
+(_sessionStorage as unknown as { ready: Promise<unknown> }).ready?.catch(
+  () => undefined,
+);
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
