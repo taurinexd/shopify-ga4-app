@@ -21,9 +21,18 @@ test('add_to_cart → view_cart → remove_from_cart fires the three events with
   await page.locator('a[href*="/products/"]').first().click();
   await page.waitForLoadState('networkidle');
 
-  // 1) add_to_cart — driven by /cart/add.js intercept in src/adapters/cart-api.ts
+  // 1) add_to_cart — driven by /cart/add.js intercept in src/adapters/cart-api.ts.
+  // Match the canonical Ajax Cart API endpoints exactly: /cart/add or
+  // /cart/add.js. A loose `includes('/cart/add')` would also match third
+  // party endpoints whose URL happens to contain the substring.
   const addRequest = page.waitForResponse(
-    (r) => r.url().includes('/cart/add') && r.status() === 200,
+    (r) => {
+      const url = new URL(r.url());
+      return (
+        (url.pathname === '/cart/add' || url.pathname === '/cart/add.js') &&
+        r.status() === 200
+      );
+    },
   );
   await page.locator(ADD_BUTTON).first().click();
   await addRequest;
@@ -58,26 +67,36 @@ test('add_to_cart → view_cart → remove_from_cart fires the three events with
   expect(viewCartEvent.ecommerce.value).toBeGreaterThan(0);
   expect(viewCartEvent.ecommerce.items.length).toBeGreaterThan(0);
 
-  // 3) remove_from_cart — user-initiated line removal on /cart
+  // 3) remove_from_cart — user-initiated line removal on /cart.
+  // Selector covers Dawn's <cart-remove-button> web component, the
+  // legacy `a[href*="/cart/change"]` link with quantity=0, and the data
+  // attribute we mark on user-clickable removes. If none match the test
+  // fails loudly: a regression in the remove instrumentation must not
+  // be invisible behind a soft warning.
   const removeButton = page
-    .locator('cart-remove-button a, a[href*="cart/change?line"][href*="quantity=0"]')
+    .locator(
+      [
+        'cart-remove-button a',
+        'cart-remove-button button',
+        'a[href*="/cart/change"][href*="quantity=0"]',
+        '[data-cart-remove]',
+      ].join(', '),
+    )
     .first();
-  if (await removeButton.count() > 0) {
-    await removeButton.click();
-    await page.waitForFunction(
-      () => (window as any).dataLayer?.some((e: any) => e?.event === 'remove_from_cart'),
-      { timeout: 5000 },
-    );
-    const removeEvent = await page.evaluate(() =>
-      (window as any).dataLayer?.find((e: any) => e?.event === 'remove_from_cart'),
-    );
-    expect(removeEvent.ecommerce.currency).toBe('EUR');
-    expect(removeEvent.ecommerce.items.length).toBeGreaterThan(0);
-  } else {
-    test.info().annotations.push({
-      type: 'warn',
-      description:
-        'remove button selector did not match — theme markup may have changed. Skipping the remove_from_cart assertion.',
-    });
-  }
+
+  await expect(
+    removeButton,
+    'remove button not found — theme markup changed; widen selector or add a [data-cart-remove] hook',
+  ).toBeVisible({ timeout: 5000 });
+
+  await removeButton.click();
+  await page.waitForFunction(
+    () => (window as any).dataLayer?.some((e: any) => e?.event === 'remove_from_cart'),
+    { timeout: 5000 },
+  );
+  const removeEvent = await page.evaluate(() =>
+    (window as any).dataLayer?.find((e: any) => e?.event === 'remove_from_cart'),
+  );
+  expect(removeEvent.ecommerce.currency).toBe('EUR');
+  expect(removeEvent.ecommerce.items.length).toBeGreaterThan(0);
 });
