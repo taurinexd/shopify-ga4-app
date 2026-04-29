@@ -12,16 +12,16 @@ flowchart LR
     JS -->|persists| LS["localStorage<br/>+ cart.attributes.ga4_cid"]
   end
 
-  DL -->|GTM tag| GA4[(GA4)]
+  DL -->|GTM tag /g/collect| GA4[(GA4)]
 
-  subgraph Checkout["Shopify-hosted Checkout"]
-    PIXEL[App Pixel<br/>Strict sandbox]
+  subgraph Checkout["Shopify-hosted Checkout (Strict pixel sandbox)"]
+    PIXEL[App Pixel<br/>ga4-pixel]
     PIXEL -->|reads| ATTR["init.data.cart.attributes.ga4_cid"]
   end
 
-  PIXEL -->|POST signed| PROXY["Shopify App Proxy<br/>/apps/ga4-relay/collect"]
-  PROXY -->|HMAC verify<br/>rate limit<br/>replay guard| RELAY[Remix relay]
-  RELAY -->|MP /mp/collect| GA4
+  PIXEL -->|cross-origin POST<br/>text/plain CORS-simple| RELAY["Vercel relay<br/>shopify-ga4-relay.vercel.app<br/>/api/collect"]
+  RELAY -->|origin allowlist<br/>schema validation<br/>rate limit + replay nonce<br/>consent + ip_override| MP["GA4 Measurement Protocol<br/>/mp/collect"]
+  MP --> GA4
 
   LS -.cross-domain identity.- ATTR
 ```
@@ -29,8 +29,9 @@ flowchart LR
 ## Components
 
 - **Theme App Extension `ga4-datalayer`** — Liquid block + bundled JS. Initializes dataLayer, parses Liquid context, intercepts cart fetch/XHR, observes variant changes, dispatches per-page events.
-- **App Pixel `ga4-pixel`** — Strict sandbox web worker. Subscribes to `checkout_started` / `checkout_completed`, reads `client_id` from cart attributes, POSTs to App Proxy.
-- **Remix relay `app/routes/apps.ga4-relay.$.tsx`** — App Proxy endpoint (splat route to capture sub-paths like `/collect`). Verifies HMAC (sorted query params, multi-value comma-join, HMAC-SHA256), applies token-bucket rate limit + replay guard via timestamp window + nonce dedup, forwards to GA4 Measurement Protocol with server-side `api_secret`.
+- **App Pixel `ga4-pixel`** — Strict sandbox web worker. Subscribes to `checkout_started` / `checkout_completed`, reads `client_id` from cart attributes, POSTs cross-origin (text/plain, CORS-simple) to the Vercel relay. Cross-origin instead of App Proxy because the Strict sandbox throws `RestrictedUrlError` on any fetch to `<shop>.myshopify.com` (where App Proxy URLs live), so the App Proxy path is categorically unreachable from the pixel.
+- **Vercel relay `app/routes/api.collect.tsx`** — public endpoint at `shopify-ga4-relay.vercel.app/api/collect`. Validates Origin (CORS allowlist for `*.shopifyapps.com` + `*.myshopify.com`), shop domain pattern, payload schema, applies token-bucket rate limit + replay-nonce guard, forwards to GA4 Measurement Protocol with server-side `api_secret`, `ip_override` from buyer XFF, and the buyer's User-Agent (otherwise GA4's bot filter trips on the datacenter source).
+- **App Proxy reference relay `app/routes/apps.ga4-relay.$.tsx`** — kept as a signed-HMAC reference implementation (token-bucket + replay-nonce + HMAC-SHA256 with sorted query params and multi-value comma-join, MCP-verified). Not in the production data path; the docstring at the top of the file explains why.
 - **Validation layer** — Zod schema (`src/datalayer/schema.ts`), no-leak `safePush` (`src/datalayer/core.ts`), shadow-DOM debug overlay (`src/debug/overlay.ts`), copy-pastable console snippet (`docs/gtm-debug-snippet.js`).
 - **Cross-domain identity** — `client_id` (UUIDv4) generated on first storefront visit, stored in `localStorage` and propagated to checkout via `cart.attributes.ga4_cid`. App Pixel reads it from `init.data.cart.attributes`. No third-party cookie required.
 
@@ -64,13 +65,14 @@ extensions/
 └── ga4-pixel/              # App Pixel (Strict sandbox)
     └── src/index.ts        # subscribes checkout events, POSTs relay
 
-app/                        # Remix admin
+app/                        # Remix admin + relay
 ├── routes/
-│   ├── app._index.tsx      # admin status panel (Polaris)
-│   └── apps.ga4-relay.$.tsx # App Proxy splat route
+│   ├── app._index.tsx       # admin status panel (Polaris)
+│   ├── api.collect.tsx      # Vercel relay (active path for the pixel)
+│   └── apps.ga4-relay.$.tsx # App Proxy splat route (reference HMAC, kept)
 └── lib/
-    ├── app-proxy-hmac.ts   # signature verification
-    └── rate-limit.ts       # token-bucket
+    ├── app-proxy-hmac.ts    # signature verification (used by the App Proxy reference)
+    └── rate-limit.ts        # token-bucket (shared by both relays)
 ```
 
 ## Event lifecycle
@@ -91,6 +93,6 @@ app/                        # Remix admin
    - Cart removals diffed and gated by `pendingUserActions` → `buildRemoveFromCart()`
 4. **Checkout** (separate sandbox):
    - App Pixel subscribes to `checkout_started` / `checkout_completed`
-   - Reads `ga4_cid` from cart attributes
-   - POSTs signed payload to `/apps/ga4-relay/collect` (App Proxy)
-   - Relay verifies HMAC, rate-limits, forwards to GA4 Measurement Protocol
+   - Reads `ga4_cid` from `init.data.cart.attributes`, `customerPrivacy` for consent state
+   - POSTs cross-origin to `https://shopify-ga4-relay.vercel.app/api/collect` (text/plain, CORS-simple, `keepalive: true`)
+   - Vercel relay validates Origin + shop + schema + rate limit + replay nonce, then forwards to GA4 Measurement Protocol with server-side `api_secret`, buyer `ip_override`, and forwarded User-Agent
