@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { GA4Event } from '../../src/datalayer/schema';
+import { ecommerceEvents } from './helpers/datalayer';
 
 /**
  * Schema-conformance test.
@@ -23,27 +24,26 @@ test('every captured GA4 event passes the canonical Zod schema', async ({ page }
   await page.waitForLoadState('networkidle');
 
   await page.locator(ADD_BUTTON).first().click();
-  await page.waitForResponse((r) => r.url().includes('/cart/add') && r.status() === 200);
+  await page.waitForResponse((r) => {
+    const u = new URL(r.url());
+    return (
+      (u.pathname === '/cart/add' || u.pathname === '/cart/add.js') &&
+      r.status() === 200
+    );
+  });
   await page.waitForTimeout(300);
 
   await page.goto('/cart');
   await page.waitForLoadState('networkidle');
 
-  const allEvents = await page.evaluate(
-    () =>
-      (window as any).dataLayer.filter(
-        (e: any) =>
-          e &&
-          typeof e === 'object' &&
-          typeof e.event === 'string' &&
-          e.ecommerce !== undefined,
-      ),
-  );
+  const allEvents = await ecommerceEvents(page);
 
-  expect(allEvents.length).toBeGreaterThan(0);
+  // The per-event-name assertions below already prove we captured the
+  // canonical brief events; an explicit "length > 0" would just hide a
+  // less informative error if the flow failed to render anything.
 
   const failures: Array<{ event: string; index: number; errors: string }> = [];
-  allEvents.forEach((evt: unknown, idx: number) => {
+  allEvents.forEach((evt, idx) => {
     const result = GA4Event.safeParse(evt);
     if (!result.success) {
       failures.push({
@@ -66,7 +66,7 @@ test('every captured GA4 event passes the canonical Zod schema', async ({ page }
   }
 
   // We expect the canonical brief events at minimum on this flow.
-  const captured = new Set(allEvents.map((e: { event: string }) => e.event));
+  const captured = new Set(allEvents.map((e) => (e as { event: string }).event));
   for (const required of ['view_item_list', 'view_item', 'add_to_cart', 'view_cart']) {
     expect(captured, `expected ${required} in this flow`).toContain(required);
   }
