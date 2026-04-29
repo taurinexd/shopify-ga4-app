@@ -21,6 +21,7 @@ export function bindSelectItem(ctx: GA4Context, push: (e: GA4EventT) => void): v
     const payload: GA4EventT = {
       event: 'select_item',
       ecommerce: {
+        currency: ctx.currency,
         item_list_id: c.handle,
         item_list_name: c.title,
         items: [{

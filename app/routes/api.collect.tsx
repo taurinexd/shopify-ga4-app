@@ -164,6 +164,14 @@ interface CollectPayload {
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<Response> {
+  // OPTIONS branch handled in BOTH loader and action intentionally.
+  // Remix's dispatch for OPTIONS preflight isn't formally specified —
+  // some adapter/runtime combinations route it to the loader (since
+  // loader handles non-mutation methods), others to the action (since
+  // it's not GET/HEAD). The defensive duplication guarantees CORS
+  // preflight returns 204 regardless of which side wins. Removing one
+  // would silently break preflight on the other dispatch path with no
+  // local indication of the regression.
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,

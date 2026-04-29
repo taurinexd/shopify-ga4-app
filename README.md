@@ -84,6 +84,7 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 {
   "event": "view_item_list",
   "ecommerce": {
+    "currency": "EUR",
     "item_list_id": "summer-collection",
     "item_list_name": "Summer Collection",
     "items": [
@@ -100,6 +101,7 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 {
   "event": "select_item",
   "ecommerce": {
+    "currency": "EUR",
     "item_list_id": "summer-collection",
     "item_list_name": "Summer Collection",
     "items": [

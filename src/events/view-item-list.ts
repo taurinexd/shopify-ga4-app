@@ -8,6 +8,7 @@ export function buildViewItemList(ctx: GA4Context): GA4EventT | null {
   return {
     event: 'view_item_list',
     ecommerce: {
+      currency: ctx.currency,
       item_list_id: c.handle,
       item_list_name: c.title,
       items: c.products.map((p, idx) => ({

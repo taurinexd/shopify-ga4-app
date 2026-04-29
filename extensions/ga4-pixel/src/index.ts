@@ -21,7 +21,7 @@ function lineItemsToMP(lines: any[]): MPItem[] {
     // the entire purchase event to be silently dropped from Realtime
     // and standard reports. Build the item incrementally and only
     // include optional fields when they're non-null/undefined strings.
-    const item: Record<string, unknown> = {
+    const item: MPItem = {
       item_id: String(l.variant?.product?.id ?? l.variant?.id ?? ""),
       item_name: l.title ?? l.variant?.product?.title ?? "",
       price: Number(
@@ -40,7 +40,7 @@ function lineItemsToMP(lines: any[]): MPItem[] {
       0,
     );
     if (typeof discount === "number" && discount > 0) item.discount = discount;
-    return item as unknown as MPItem;
+    return item;
   });
 }
 
