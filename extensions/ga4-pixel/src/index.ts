@@ -43,25 +43,35 @@ function tsToSeconds(ts: unknown): string {
 
 async function send(relayUrl: string, body: unknown): Promise<void> {
   const payload = JSON.stringify(body);
+  console.log("[GA4] send() called", { relayUrl, bytes: payload.length });
   try {
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
       const blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
       const ok = navigator.sendBeacon(relayUrl, blob);
+      console.log("[GA4] sendBeacon result", { ok });
       if (ok) return;
+    } else {
+      console.log("[GA4] sendBeacon not available, using fetch");
     }
-    await fetch(relayUrl, {
+    console.log("[GA4] fetch() attempting", { relayUrl });
+    const res = await fetch(relayUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=UTF-8" },
       body: payload,
       keepalive: true,
     });
-  } catch {
-    // Swallow — pixel sandbox cannot surface errors and analytics
-    // must never break checkout. PT22 relay handles retries / DLQ.
+    console.log("[GA4] fetch() resolved", {
+      status: res.status,
+      ok: res.ok,
+      type: res.type,
+    });
+  } catch (err) {
+    console.log("[GA4] send() threw", String(err));
   }
 }
 
 register(({ analytics, init }) => {
+  console.log("[GA4] register() fired");
   const initAny = init as any;
   const cartAttrs: any[] =
     initAny?.data?.cart?.attributes ??
@@ -72,11 +82,26 @@ register(({ analytics, init }) => {
     cidAttr?.value ??
     `pixel-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  const shop: string =
-    initAny?.data?.shop?.myshopifyDomain ??
-    initAny?.context?.document?.location?.host ??
-    "";
-  const relayUrl = `https://${shop}/apps/ga4-relay/collect`;
+  const shopFromInit = initAny?.data?.shop?.myshopifyDomain;
+  const shopFromContext = initAny?.context?.document?.location?.host;
+  const shop: string = shopFromInit ?? shopFromContext ?? "";
+  // Strict pixel sandbox forbids fetch to the shop's own myshopifyDomain
+  // (RestrictedUrlError), so the App Proxy path is unusable. Relay runs
+  // on Vercel and is reached cross-origin with CORS.
+  const relayUrl = "https://shopify-ga4-relay.vercel.app/api/collect";
+  console.log("[GA4] init resolved", {
+    shopFromInit,
+    shopFromContext,
+    shop,
+    relayUrl,
+    cid,
+    hasNavigator: typeof navigator !== "undefined",
+    hasSendBeacon:
+      typeof navigator !== "undefined" && !!navigator.sendBeacon,
+  });
+
+  const newNonce = (): string =>
+    `n-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   // TODO(PT22): derive consent dynamically from cart attributes / customerPrivacy
   const consent = {
@@ -85,11 +110,18 @@ register(({ analytics, init }) => {
   };
 
   analytics.subscribe("checkout_started", async (event) => {
+    console.log("[GA4] checkout_started fired");
     const evAny = event as any;
     const checkout = evAny?.data?.checkout;
-    if (!checkout) return;
+    if (!checkout) {
+      console.log("[GA4] checkout_started: no checkout data, skipping");
+      return;
+    }
     await send(relayUrl, {
+      shop,
       client_id: cid,
+      ts: Date.now(),
+      nonce: newNonce(),
       consent,
       events: [
         {
@@ -107,11 +139,18 @@ register(({ analytics, init }) => {
   });
 
   analytics.subscribe("checkout_completed", async (event) => {
+    console.log("[GA4] checkout_completed fired");
     const evAny = event as any;
     const checkout = evAny?.data?.checkout;
-    if (!checkout) return;
+    if (!checkout) {
+      console.log("[GA4] checkout_completed: no checkout data, skipping");
+      return;
+    }
     await send(relayUrl, {
+      shop,
       client_id: cid,
+      ts: Date.now(),
+      nonce: newNonce(),
       consent,
       events: [
         {
