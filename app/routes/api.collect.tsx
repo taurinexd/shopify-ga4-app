@@ -7,6 +7,11 @@ import { take } from '../lib/rate-limit';
  * One JSON object per request — Vercel ingests stdout line-by-line so
  * this is enough to grep / pipe into a log search later. Sensitive
  * values (api_secret, full payload) are intentionally not logged.
+ *
+ * `status` reflects the OUTCOME the relay returned to the caller AND
+ * whether the upstream MP forward succeeded — see `ok` for the
+ * end-to-end success bit. A 204 from us with `forward_status: 401`
+ * means GA4 rejected the event silently and the session is corrupt.
  */
 interface RelayLog {
   level: 'info' | 'warn' | 'error';
@@ -16,7 +21,9 @@ interface RelayLog {
   client_id?: string;
   origin?: string | null;
   event_names?: string[];
+  event_count?: number;
   status: number;
+  ok?: boolean;
   total_ms: number;
   forward_ms?: number;
   forward_status?: number;
@@ -30,8 +37,50 @@ function emit(log: RelayLog): void {
   else console.log(line);
 }
 
-function newRequestId(): string {
+/**
+ * Use crypto.randomUUID where available (Node ≥19, Vercel Functions
+ * runtime) so the request_id is RFC 4122-compliant and joinable across
+ * log systems. If a caller propagates an `x-request-id` header (e.g.
+ * the pixel pushing its own correlation ID, or an upstream load
+ * balancer), prefer that — but cap length and strip control characters
+ * so a hostile client can't inject a 4 KB header into our logs.
+ */
+function deriveRequestId(headerValue: string | null): string {
+  if (headerValue) {
+    const cleaned = headerValue.replace(/[^a-zA-Z0-9._:-]/g, '').slice(0, 64);
+    if (cleaned.length > 0) return cleaned;
+  }
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Sanitise the inbound Origin header before logging. Origin can be
+ * spoofed by non-browser clients, so we never trust it for auth, but we
+ * still log it for debugging — without truncation/normalisation it's an
+ * XSS sink the moment we pipe Vercel logs into a dashboard. Reuse the
+ * URL parser so an unparseable header is logged as null.
+ */
+function sanitizeOrigin(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.origin.slice(0, 256);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scrub the api_secret query param from any error message that might
+ * include the constructed MP URL. Defence-in-depth: the secret should
+ * never appear in stdout even if fetch's error message embeds the URL.
+ */
+function safeReason(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  return raw.replace(/api_secret=[^&\s]*/gi, 'api_secret=***');
 }
 
 /**
@@ -59,6 +108,16 @@ const SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 interface NonceEntry {
   seenAt: number;
 }
+/**
+ * In-memory replay guard — module-scoped, so each Vercel Function cold
+ * container gets its own Map. Concurrent warm containers can therefore
+ * each accept the same nonce once before either of them sees the other,
+ * making this a single-instance soft guard, not a cluster-wide one. For
+ * the analytics ingest path the failure mode is "GA4 sees one duplicate
+ * event" which it dedupes anyway via client_id+timestamp; the harder
+ * guarantee (cluster-wide one-shot) would need Vercel KV / Upstash. The
+ * REPLAY_WINDOW_MS bound keeps the surface tiny.
+ */
 const seenNonces = new Map<string, NonceEntry>();
 
 function reapNonces(now: number): void {
@@ -118,9 +177,10 @@ export async function action({
   request,
 }: ActionFunctionArgs): Promise<Response> {
   const t0 = Date.now();
-  const requestId = newRequestId();
-  const origin = request.headers.get('origin');
-  const cors = corsHeaders(origin);
+  const requestId = deriveRequestId(request.headers.get('x-request-id'));
+  const rawOrigin = request.headers.get('origin');
+  const origin = sanitizeOrigin(rawOrigin);
+  const cors = corsHeaders(rawOrigin);
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: cors });
@@ -194,9 +254,13 @@ export async function action({
     });
     return new Response('Missing events', { status: 400, headers: cors });
   }
-  const eventNames: string[] = [];
-  for (const ev of body.events as Array<{ name?: unknown }>) {
-    const name = typeof ev?.name === 'string' ? ev.name : '';
+  // Materialise the full list of event names up front so a rejection
+  // log shows the whole batch (not just the rejected one) — useful for
+  // debugging "why was this batch dropped" upstream.
+  const fullEventNames = (body.events as Array<{ name?: unknown }>).map((ev) =>
+    typeof ev?.name === 'string' ? ev.name : '',
+  );
+  for (const name of fullEventNames) {
     if (!ALLOWED_EVENTS.has(name)) {
       emit({
         level: 'warn',
@@ -205,7 +269,8 @@ export async function action({
         origin,
         shop,
         client_id: clientId,
-        event_names: [name],
+        event_names: fullEventNames,
+        event_count: fullEventNames.length,
         status: 400,
         total_ms: Date.now() - t0,
         reason: name,
@@ -215,8 +280,8 @@ export async function action({
         headers: cors,
       });
     }
-    eventNames.push(name);
   }
+  const eventNames = fullEventNames;
 
   if (!take(`${shop}:${clientId}`)) {
     emit({
@@ -319,6 +384,11 @@ export async function action({
   const tForwardStart = Date.now();
   let forwardStatus = 0;
   try {
+    // Note: GA4's live /mp/collect always returns 2xx for any well-formed
+    // POST, including semantically-rejected ones (bad measurement_id,
+    // wrong consent casing, etc.) — those become silent drops. Validation
+    // diagnostics are only available from /debug/mp/collect, which is out
+    // of scope for the live ingest path.
     const resp = await fetch(mpUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -334,23 +404,33 @@ export async function action({
       shop,
       client_id: clientId,
       event_names: eventNames,
+      event_count: eventNames.length,
       status: 502,
+      ok: false,
       total_ms: Date.now() - t0,
       forward_ms: Date.now() - tForwardStart,
-      reason: e instanceof Error ? e.message : String(e),
+      reason: safeReason(e),
     });
     return new Response('Bad Gateway', { status: 502, headers: cors });
   }
 
+  // If GA4 MP returned an HTTP error, the relay's own response is still
+  // 204 (we want sub-200ms p99 for the pixel; surfacing upstream errors
+  // would force an extra round trip). But we log `status: 502` so an
+  // ops dashboard filter on `status >= 400` catches the upstream
+  // failure without needing to know about `forward_status`.
+  const forwardFailed = forwardStatus >= 400;
   emit({
-    level: forwardStatus >= 400 ? 'warn' : 'info',
+    level: forwardFailed ? 'warn' : 'info',
     msg: 'forwarded to GA4 MP',
     request_id: requestId,
     origin,
     shop,
     client_id: clientId,
     event_names: eventNames,
-    status: 204,
+    event_count: eventNames.length,
+    status: forwardFailed ? 502 : 204,
+    ok: !forwardFailed,
     total_ms: Date.now() - t0,
     forward_ms: Date.now() - tForwardStart,
     forward_status: forwardStatus,
