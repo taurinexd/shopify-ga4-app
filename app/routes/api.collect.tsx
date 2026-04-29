@@ -461,6 +461,7 @@ export async function action({
     total_ms: Date.now() - t0,
     forward_ms: Date.now() - tForwardStart,
     forward_status: forwardStatus,
+    reason: `ip_override=${buyerIp ?? '<none>'} ua=${buyerUa ? buyerUa.slice(0, 60) : '<none>'}`,
   });
 
   return new Response(null, { status: 204, headers: cors });
