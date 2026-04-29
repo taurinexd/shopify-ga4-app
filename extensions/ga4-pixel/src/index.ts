@@ -42,21 +42,20 @@ function tsToSeconds(ts: unknown): string {
 }
 
 async function send(relayUrl: string, body: unknown): Promise<void> {
-  const payload = JSON.stringify(body);
+  // The strict pixel sandbox runs as a Web Worker; navigator there is a
+  // WorkerNavigator (no sendBeacon), so fetch is the only outbound option.
+  // Content-Type text/plain keeps the request CORS-simple (no preflight)
+  // while still carrying a JSON string the relay parses with JSON.parse.
   try {
-    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
-      if (navigator.sendBeacon(relayUrl, blob)) return;
-    }
     await fetch(relayUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=UTF-8" },
-      body: payload,
+      body: JSON.stringify(body),
       keepalive: true,
     });
   } catch {
-    // Swallow — pixel sandbox cannot surface errors and analytics
-    // must never break checkout. Server-side handles retries / DLQ.
+    // Swallow — pixel sandbox cannot surface errors and analytics must
+    // never break checkout.
   }
 }
 
