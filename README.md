@@ -1,6 +1,6 @@
 # Shopify GA4 Data Layer
 
-App Shopify che espone un **data layer GA4-ready** per eventi storefront (Theme App Extension) e checkout (App Pixel via App Proxy → Measurement Protocol). Include validazione, debug tooling, test e CI.
+App Shopify che espone un **data layer GA4-ready** per eventi storefront (Theme App Extension) e checkout (App Pixel cross-origin → Vercel relay → Measurement Protocol). Include validazione, debug tooling, test e CI.
 
 ## 1. Setup locale
 
@@ -43,7 +43,8 @@ L'app è stata sviluppata e validata live su `ga4-challenge-dev.myshopify.com` (
 Vedi `docs/architecture.md` per il diagramma Mermaid completo. In sintesi:
 
 - **Storefront** (Theme App Extension `ga4-datalayer`) → `window.dataLayer` → GTM → GA4
-- **Checkout** (App Pixel `ga4-pixel`, Strict sandbox) → POST signed → Remix App Proxy → GA4 Measurement Protocol
+- **Checkout** (App Pixel `ga4-pixel`, Strict sandbox) → cross-origin POST a `shopify-ga4-relay.vercel.app/api/collect` → GA4 Measurement Protocol (api_secret server-side)
+- App Proxy relay (`app/routes/apps.ga4-relay.$.tsx`) **kept come reference signed-HMAC**, ma non usato dal pixel: la sandbox Strict throwa `RestrictedUrlError` su qualsiasi fetch verso `<shop>.myshopify.com/apps/...`. Cross-origin a Vercel è l'unico path raggiungibile.
 - Identità cross-domain via `cart.attributes.ga4_cid` (no third-party cookie)
 - Validazione Zod no-leak, debug overlay shadow-DOM, console snippet copy-pastable
 
@@ -60,7 +61,7 @@ Vedi `docs/architecture.md` per il diagramma Mermaid completo. In sintesi:
 | begin_checkout | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('checkout_started')` |
 | purchase | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('checkout_completed')` |
 
-Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga4-embed.liquid`. Relay: `app/routes/apps.ga4-relay.$.tsx`.
+Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga4-embed.liquid`. Relay attivo: `app/routes/api.collect.tsx` (Vercel public endpoint, validazione Origin + shop + schema + rate limit + replay nonce). Relay App Proxy reference: `app/routes/apps.ga4-relay.$.tsx` (deprecato per il pixel, vedi docstring).
 
 ## 6. Esempi di payload
 
@@ -260,9 +261,19 @@ Format: **problema** → **analisi** → **soluzione**.
   - **Problema:** `cart-remove-button` di Dawn non espone `data-variant-id`, quindi il delegate non poteva popolare `pendingUserActions` → handleCartChange skippava il diff.
   - **Soluzione:** fallback temporale 3s (`recentRemoveClickTs`) — qualsiasi click su un selector di remove segna il flag, e `hasPendingUserAction` lo consuma se il diff cart arriva entro la finestra. Mantiene la protezione anti-falsi-positivi delle discount/bundle apps.
 
+- **`purchase` + `begin_checkout` silently dropped da GA4 MP nonostante 204**
+  - **Problema:** in produzione il relay forwardava al `/mp/collect` con `forward_status: 204` per ogni richiesta, ma gli eventi non comparivano in Realtime/standard reports. `/debug/mp/collect` validava OK, curl diretto con stesso payload arrivava — il pixel via relay no. Pattern indistinguibile da bot filter post-ingest.
+  - **Analisi:** dump del body forwardato + validazione su `/debug/mp/collect` ha rivelato la causa reale: `Item param [item_variant] has unsupported value [null_value: NULL_VALUE], validationCode: VALUE_INVALID`. Shopify checkout payload restituisce `variant.title === null` per prodotti con singola variante default; il pixel includeva `item_variant: null`, GA4 lo accettava al transport layer (204) ma droppava l'intero evento prima dell'aggregazione. Stesso rischio per `item_brand` e `item_category` quando vendor/type sono null.
+  - **Soluzione:** `lineItemsToMP` in `extensions/ga4-pixel/src/index.ts` ora costruisce l'item incrementalmente e include i campi opzionali (item_brand, item_category, item_variant, discount) **solo** quando sono stringhe non vuote / numeri positivi. JSON.stringify omette `undefined` ma serializza `null`, quindi la differenza è critica.
+  - **Diagnostica permanente:** env-flag `GA4_DEBUG_MODE=1` sul relay inietta `debug_mode: 1` per route a DebugView (bypass bot filter); `GA4_DUMP_PAYLOAD=1` logga l'mpBody completo in stdout. Off in prod, on per dev/incident.
+
+- **Function relay crash intermittente (`responseStatusCode: 0`) su cold start**
+  - **Problema:** alcune POST a `/api/collect` ritornavano `responseStatusCode: 0` invece di 204, anche con body identico. Il pixel vedeva 204 (artefatto del `keepalive: true` fetch) ma server-side l'evento non veniva forwardato. Vercel logs mostravano `PrismaClientInitializationError: Can't reach database server` / `Timed out fetching a new connection from the connection pool`.
+  - **Analisi:** `app/entry.server.tsx` static-importava `addDocumentResponseHeaders` da `app/shopify.server.ts`, che a sua volta istanzia `PrismaSessionStorage`. Il costruttore di quest'ultimo lancia `pollForTable()` (un `prisma.session.count()` con retry) e salva la promise su `.ready`. Su /api/collect (relay GA4 puro) nessuno fa `await sessionStorage.ready`; quando Neon Postgres era pausato o pool saturato, la promise rejectava → unhandled rejection → Vercel terminava la function senza response.
+  - **Soluzione:** due fix incrementali. (1) `entry.server.tsx` ora `await import('./shopify.server')` dinamico — `handleRequest` fires solo per route HTML, quindi /api/collect non triggera più il chain di import. (2) `app/shopify.server.ts` aggancia un terminal `.catch(() => undefined)` su `sessionStorage.ready` per neutralizzare la rejection a livello runtime; le route che genuinamente usano la session table (admin, auth, webhooks) continuano a fare `await sessionStorage.ready` e ricevono il `MissingSessionTableError` originale come prima.
+
 ## 10. Cose non chiuse
 
-- **Validazione end-to-end `begin_checkout` + `purchase`** — l'App Pixel gira nel Strict sandbox del checkout e POSTa al relay Remix che oggi è raggiungibile **solo via tunnel cloudflared `shopify app dev`**. I 6 eventi storefront sono stati validati live sul dev store `ga4-challenge-dev.myshopify.com` via debug overlay; i 2 eventi checkout richiedono deploy production del relay (Vercel/Fly + dominio stabile + `application_url` aggiornato in `shopify.app.toml`) — la pipeline è scritta, testata in unit + e2e (Playwright copre fino al `cart.attributes.ga4_cid`), ma non eseguita end-to-end contro GA4 DebugView.
 - **Copertura `sendBeacon`** — usato da alcune Cart API third-party, edge case raro, non coperto. Documentato.
 - **Compatibilità Horizon** — non testata empiricamente (Horizon = nuovo reference theme Shopify 2026). Fallback `MutationObserver` dovrebbe coprire.
 - **Rate limit in-memory** — sufficiente per challenge / single-instance. Produzione multi-instance richiede Redis/Upstash.
@@ -283,12 +294,12 @@ Format: **problema** → **analisi** → **soluzione**.
 ## 12. Collegamento a GTM/GA4 in produzione
 
 1. **Setup GTM container**: importare `docs/gtm-container.json` in un nuovo container web (Admin → Import Container → Choose file). Sostituire `G-XXXXXXX` con il proprio Measurement ID GA4.
-2. **Estendere container**: il template include 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 2 checkout events (begin_checkout, purchase) vanno direttamente a GA4 Measurement Protocol via App Proxy → niente tag GTM richiesto.
+2. **Estendere container**: il template include 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 2 checkout events (begin_checkout, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay → niente tag GTM richiesto.
 3. **GA4 property config**: creare property → Web data stream → enhanced measurement attivo. Misurare con `Realtime` + `DebugView` durante test.
 4. **Measurement Protocol API secret**: Admin → Data streams → click stream → "Measurement Protocol API secrets" → Create. Inserire in `.env` come `GA4_API_SECRET` (consumato server-side dal relay, mai esposto al client).
 5. **DNS/CSP**: whitelist `googletagmanager.com`, `google-analytics.com`. Se CSP attivo nel tema, aggiungere headers via `extensions/ga4-datalayer/blocks/ga4-embed.liquid`.
 6. **Consent Mode v2 setup**: collegare a CMP (Cookiebot, OneTrust, ecc.) o usare Shopify Customer Privacy API. Il wrapper `applyConsentDefaults()` parte denied; aggiornare via `updateConsent()` dopo scelta utente.
-7. **App Proxy config**: in `shopify.app.toml` → `[app_proxy]` → impostare `url` con dominio production app + `subpath = "ga4-relay"` + `prefix = "apps"`. CLI sincronizza con `shopify app config push`.
+7. **Relay config**: il pixel chiama `https://<your-vercel-host>/api/collect` cross-origin (`relayUrl` in `extensions/ga4-pixel/src/index.ts`). Per prod: deploy Remix app su Vercel/Fly, settare `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` come env vars server-side. CORS allowlist nel relay accetta `*.myshopify.com` + `*.shopifyapps.com` (origin Shopify pixel sandbox).
 8. **QA pre-go-live checklist**:
    - [ ] Snippet console su tutte le 6 page type
    - [ ] GA4 DebugView mostra eventi reali
@@ -298,7 +309,7 @@ Format: **problema** → **analisi** → **soluzione**.
 
 ## 13. Tempo totale impiegato
 
-**Stima onesta: ~22-26h.**
+**Stima onesta: ~28-32h.**
 
 Breakdown:
 - Bootstrap (scaffold, deps, configs, smoke deploy): ~3h
@@ -314,5 +325,7 @@ Breakdown:
 - CI workflows: ~0.5h
 - Architecture diagram + M2-vs-Shopify research-based + GTM container template: ~2.5h
 - README + final smoke + screenshots: ~1.5h
+- Pixel deploy production Vercel + cross-origin pivot da App Proxy: ~2h
+- Debug end-to-end GA4 ingest (item_variant null + Prisma session storage): ~3.5h
 
 **Tooling speedup:** Shopify MCP plugin (`learn_shopify_api`, `search_docs_chunks`, `validate_theme`, `validate_component_codeblocks`) ha verificato API/Liquid/Polaris in tempo reale, evitando WebSearch e prevenendo bug da hallucinated APIs (es: ho scoperto via MCP che il theme test-data usa `<variant-radios>` non `<variant-selects>`, e che la firma App Proxy richiede multi-value comma-join).

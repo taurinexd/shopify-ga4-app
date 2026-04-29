@@ -50,10 +50,10 @@ async function attachCDP(client, label) {
 (async () => {
   const browser = await chromium.launch({
     headless: false,
-    args: ["--auto-open-devtools-for-tabs"],
+    args: ["--auto-open-devtools-for-tabs", "--start-maximized"],
   });
   const ctx = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
+    viewport: null,
   });
   const page = await ctx.newPage();
 
@@ -155,6 +155,9 @@ async function attachCDP(client, label) {
   } catch {
     console.log("[boot] no password gate or already unlocked");
   }
+
+  console.log(`[boot] navigating to ${STORE_URL}/?ga4_debug=1`);
+  await page.goto(`${STORE_URL}/?ga4_debug=1`);
 
   console.log(`[boot] navigated to storefront. Drive checkout manually.`);
   console.log(`[boot] all [GA4] console output + relay network traffic will appear below`);
