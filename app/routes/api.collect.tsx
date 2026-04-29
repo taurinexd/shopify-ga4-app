@@ -397,9 +397,26 @@ export async function action({
     return Object.keys(out).length > 0 ? out : undefined;
   };
 
+  // Dev-only: when GA4_DEBUG_MODE=1 is set on the function, inject
+  // `debug_mode: 1` into each event's params before forwarding. This
+  // routes the event to GA4's DebugView, which bypasses the always-on
+  // post-ingest bot/spam filter — useful when validating end-to-end on a
+  // dev store, where repeated test traffic from the same client_id+UA
+  // through a datacenter source IP (Vercel) matches GA4's synthetic-
+  // traffic heuristics and gets silently dropped from Realtime/standard
+  // reports despite the live endpoint returning 204. Production should
+  // leave this unset so events flow normally into reports.
+  const debugMode = process.env.GA4_DEBUG_MODE === '1';
+  const eventsForForward = debugMode
+    ? (body.events as Array<Record<string, unknown>>).map((ev) => ({
+        ...ev,
+        params: { ...((ev.params as Record<string, unknown>) ?? {}), debug_mode: 1 },
+      }))
+    : body.events;
+
   const mpBody: Record<string, unknown> = {
     client_id: clientId,
-    events: body.events,
+    events: eventsForForward,
   };
   const consent = normalizeConsent(body.consent);
   if (consent) mpBody.consent = consent;
@@ -461,7 +478,7 @@ export async function action({
     total_ms: Date.now() - t0,
     forward_ms: Date.now() - tForwardStart,
     forward_status: forwardStatus,
-    reason: `ip_override=${buyerIp ?? '<none>'} ua=${buyerUa ? buyerUa.slice(0, 60) : '<none>'}`,
+    reason: `ip_override=${buyerIp ?? '<none>'} ua=${buyerUa ? buyerUa.slice(0, 60) : '<none>'} debug_mode=${debugMode ? '1' : '0'}`,
   });
 
   return new Response(null, { status: 204, headers: cors });
