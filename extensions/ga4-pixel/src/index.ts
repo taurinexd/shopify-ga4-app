@@ -86,10 +86,16 @@ register(({ analytics, init }) => {
   const newNonce = (): string =>
     `n-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  // TODO(PT22): derive consent dynamically from cart attributes / customerPrivacy
+  // Map Shopify's customerPrivacy flags to GA4 Consent Mode v2 signals.
+  // The relay normalises casing; we send lowercase here to match how the
+  // pixel initialised consent on the storefront and avoid divergence.
+  const privacy = (init as { customerPrivacy?: Record<string, boolean> }).customerPrivacy;
+  const marketingAllowed = privacy?.marketingAllowed === true;
   const consent = {
-    ad_user_data: "denied",
-    ad_personalization: "denied",
+    // ad_user_data covers sending the user's data to Google for ads.
+    ad_user_data: marketingAllowed ? "granted" : "denied",
+    // ad_personalization covers using that data for personalised ads.
+    ad_personalization: marketingAllowed ? "granted" : "denied",
   };
 
   analytics.subscribe("checkout_started", async (event) => {
