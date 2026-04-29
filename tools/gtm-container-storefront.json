@@ -21,10 +21,10 @@
         "accountId": "6352362603",
         "containerId": "250788289",
         "tagId": "1",
-        "name": "Google tag - GA4 Q3KZ1ZW02Z",
+        "name": "Google tag - GA4",
         "type": "googtag",
         "parameter": [
-          {"type": "TEMPLATE", "key": "tagId", "value": "G-Q3KZ1ZW02Z"}
+          {"type": "TEMPLATE", "key": "tagId", "value": "G-XXXXXXXXXX"}
         ],
         "fingerprint": "0",
         "firingTriggerId": ["2147479573"],
@@ -41,7 +41,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "view_item_list"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",
@@ -71,7 +71,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "select_item"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",
@@ -101,7 +101,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "view_item"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",
@@ -135,7 +135,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "add_to_cart"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",
@@ -169,7 +169,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "remove_from_cart"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",
@@ -203,7 +203,7 @@
         "parameter": [
           {"type": "BOOLEAN", "key": "sendEcommerceData", "value": "false"},
           {"type": "TEMPLATE", "key": "eventName", "value": "view_cart"},
-          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4 Q3KZ1ZW02Z"},
+          {"type": "TAG_REFERENCE", "key": "measurementId", "value": "Google tag - GA4"},
           {
             "type": "LIST",
             "key": "eventParameters",

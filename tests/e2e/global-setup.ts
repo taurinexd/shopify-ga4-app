@@ -15,7 +15,18 @@ export default async function globalSetup(): Promise<void> {
   const baseURL = process.env.SHOPIFY_DEV_STORE_URL;
   const password = process.env.STOREFRONT_PASSWORD;
   if (!baseURL || !password) {
-    throw new Error('SHOPIFY_DEV_STORE_URL and STOREFRONT_PASSWORD env vars required');
+    const missing = [
+      !baseURL && 'SHOPIFY_DEV_STORE_URL',
+      !password && 'STOREFRONT_PASSWORD',
+    ]
+      .filter(Boolean)
+      .join(' and ');
+    throw new Error(
+      `e2e setup: ${missing} not set. The storefront is password-protected; ` +
+        `every spec needs an unlocked session. Set both env vars before running ` +
+        `\`npm run test:e2e\` (locally) or configure them as GitHub Actions ` +
+        `secrets (CI). See README §6 for the bypass mechanism.`,
+    );
   }
 
   const ctx = await request.newContext({ baseURL });

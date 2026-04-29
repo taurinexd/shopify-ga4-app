@@ -292,6 +292,7 @@ export async function action({
       shop,
       client_id: clientId,
       event_names: eventNames,
+      event_count: eventNames.length,
       status: 429,
       total_ms: Date.now() - t0,
     });
@@ -309,6 +310,7 @@ export async function action({
       shop,
       client_id: clientId,
       event_names: eventNames,
+      event_count: eventNames.length,
       status: 401,
       total_ms: Date.now() - t0,
       reason: `delta_ms=${Math.abs(now - ts)}`,
@@ -346,6 +348,7 @@ export async function action({
       shop,
       client_id: clientId,
       event_names: eventNames,
+      event_count: eventNames.length,
       status: 500,
       total_ms: Date.now() - t0,
     });

@@ -51,3 +51,8 @@ Thumbs.db
 .local/
 *.local
 .vercel
+
+# Theme app extension bundle — built artifact, emitted by `npm run build:ext`.
+# CI builds it on every push; tracking it in-tree just bloats the diff and
+# noisies git blame. Keep the source in src/, regenerate on demand.
+/extensions/ga4-datalayer/assets/ga4-datalayer.js
