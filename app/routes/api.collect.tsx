@@ -157,15 +157,33 @@ export async function action({
     measurementId,
   )}&api_secret=${encodeURIComponent(apiSecret)}`;
 
+  // GA4 Measurement Protocol requires consent values to be uppercase
+  // ("GRANTED" | "DENIED"); any other casing causes silent rejection of
+  // the entire event payload (no error returned, just dropped).
+  const normalizeConsent = (raw: unknown): Record<string, string> | undefined => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === 'string') {
+        const upper = v.trim().toUpperCase();
+        if (upper === 'GRANTED' || upper === 'DENIED') out[k] = upper;
+      }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  };
+
+  const mpBody: Record<string, unknown> = {
+    client_id: clientId,
+    events: body.events,
+  };
+  const consent = normalizeConsent(body.consent);
+  if (consent) mpBody.consent = consent;
+
   try {
     await fetch(mpUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        consent: body.consent,
-        events: body.events,
-      }),
+      body: JSON.stringify(mpBody),
     });
   } catch {
     return new Response('Bad Gateway', { status: 502, headers: cors });
