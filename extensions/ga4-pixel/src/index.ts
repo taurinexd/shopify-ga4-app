@@ -82,7 +82,7 @@ async function send(relayUrl: string, body: unknown): Promise<void> {
   }
 }
 
-register(({ analytics, init }) => {
+register(({ analytics, init, customerPrivacy: privacyApi }) => {
   const initAny = init as any;
   const cartAttrs: any[] =
     initAny?.data?.cart?.attributes ??
@@ -124,17 +124,13 @@ register(({ analytics, init }) => {
   let consent = consentFromPrivacy(init.customerPrivacy);
 
   // Re-evaluate when the buyer changes their mind mid-session via a CMP
-  // banner. `visitorConsentCollected` is the canonical event Shopify
-  // emits; we update the closure so the next subscribe callback uses the
-  // fresh signals.
-  analytics.subscribe(
-    "visitor_consent_collected",
-    (e) => {
-      const next = (e as { customerPrivacy?: typeof init.customerPrivacy })
-        .customerPrivacy;
-      if (next) consent = consentFromPrivacy(next);
-    },
-  );
+  // banner. The canonical channel is the customerPrivacy event bus
+  // (PrivacyApi.d.ts), not the analytics one — events on the analytics
+  // bus accept arbitrary string keys at the type level but never fire
+  // for consent changes.
+  privacyApi.subscribe("visitorConsentCollected", (e) => {
+    consent = consentFromPrivacy(e.customerPrivacy);
+  });
 
   analytics.subscribe("checkout_started", async (event) => {
     const evAny = event as any;
