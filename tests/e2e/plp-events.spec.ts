@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { PLP_LINK_IN_GRID } from './helpers/datalayer';
 
 /**
  * PLP coverage: view_item_list and select_item.
@@ -14,13 +15,10 @@ import { test, expect } from '@playwright/test';
  * survive across SPA-ish transitions.
  */
 
-const PLP_LINK_IN_GRID =
-  'main a[href*="/products/"], #MainContent a[href*="/products/"], [id*="MainContent"] a[href*="/products/"]';
-
 test.describe('PLP — view_item_list', () => {
   test('fires on /collections/all with full GA4 shape', async ({ page }) => {
     await page.goto('/collections/all');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const event = await page.evaluate(() =>
       (window as any).dataLayer?.find((e: any) => e?.event === 'view_item_list'),
@@ -48,7 +46,7 @@ test.describe('PLP — view_item_list', () => {
   test('does not double-fire across bfcache navigation', async ({ page }) => {
     // First load: count fires on the PLP. Should be exactly one.
     await page.goto('/collections/all');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(500);
     const firstLoadCount = await page.evaluate(
       () => (window as any).dataLayer.filter((e: any) => e?.event === 'view_item_list').length,
@@ -90,7 +88,7 @@ test.describe('PLP — select_item', () => {
     });
 
     await page.goto('/collections/all');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const cards = page.locator(PLP_LINK_IN_GRID);
     const secondCardHref = await cards.nth(1).getAttribute('href');

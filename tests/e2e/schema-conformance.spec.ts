@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { GA4Event } from '../../src/datalayer/schema';
-import { ecommerceEvents } from './helpers/datalayer';
+import { ecommerceEvents, PLP_LINK_IN_GRID } from './helpers/datalayer';
 
 /**
  * Schema-conformance test.
@@ -18,10 +18,10 @@ const ADD_BUTTON =
 
 test('every captured GA4 event passes the canonical Zod schema', async ({ page }) => {
   await page.goto('/collections/all');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
-  await page.locator('a[href*="/products/"]').first().click();
-  await page.waitForLoadState('networkidle');
+  await page.locator(PLP_LINK_IN_GRID).first().click();
+  await page.waitForLoadState('domcontentloaded');
 
   await page.locator(ADD_BUTTON).first().click();
   await page.waitForResponse((r) => {
@@ -34,7 +34,7 @@ test('every captured GA4 event passes the canonical Zod schema', async ({ page }
   await page.waitForTimeout(300);
 
   await page.goto('/cart');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
   const allEvents = await ecommerceEvents(page);
 

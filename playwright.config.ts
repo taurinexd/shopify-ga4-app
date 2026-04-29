@@ -14,6 +14,14 @@ export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
   retries: 1,
+  // Shopify dev stores sit behind a Cloudflare/bot-detection layer that
+  // ratelimits per source IP within a short window. Running the suite
+  // with parallel workers (default = N CPUs) reliably trips the
+  // "Your connection needs to be verified before you can proceed"
+  // interstitial mid-run, which is impossible to dismiss
+  // programmatically. Serializing to a single worker keeps the request
+  // rate under the threshold and the storage-state cookie alive.
+  workers: 1,
   globalSetup: './tests/e2e/global-setup.ts',
   use: {
     baseURL: process.env.SHOPIFY_DEV_STORE_URL ?? 'https://example.myshopify.com',

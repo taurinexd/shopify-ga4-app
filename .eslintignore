@@ -4,3 +4,8 @@ public/build
 shopify-app-remix
 */*.yml
 .shopify
+dist
+extensions/ga4-datalayer/assets/ga4-datalayer.js
+extensions/ga4-pixel/dist
+test-results
+playwright-report

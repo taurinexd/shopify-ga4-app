@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { PLP_LINK_IN_GRID } from './helpers/datalayer';
 
 /**
  * App Pixel coverage: begin_checkout.
@@ -25,9 +26,9 @@ const RELAY_URL_FRAGMENT = `${RELAY_HOST}/api/collect`;
 
 test('begin_checkout reaches the relay with the correct shape', async ({ page }) => {
   await page.goto('/collections/all');
-  await page.waitForLoadState('networkidle');
-  await page.locator('a[href*="/products/"]').first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator(PLP_LINK_IN_GRID).first().click();
+  await page.waitForLoadState('domcontentloaded');
   await page.locator(ADD_BUTTON).first().click();
   await page.waitForResponse(
     (r) => {

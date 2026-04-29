@@ -2,41 +2,46 @@
 
 App Shopify che espone un **data layer GA4-ready** per eventi storefront (Theme App Extension) e checkout (App Pixel cross-origin → Vercel relay → Measurement Protocol). Include validazione, debug tooling, test e CI.
 
-## 1. Setup locale
+## 1. Verifica rapida (senza setup Shopify)
+
+Tutto il codice del data layer (eventi storefront + schema + adapter cart/variant) è verificabile **senza credenziali Shopify Partners**:
 
 ```bash
 npm install
-cp .env.example .env  # popolare GA4_MEASUREMENT_ID, GA4_API_SECRET, ecc.
-npm run shopify:dev
+npm test               # 46 unit test (vitest)
+npm run typecheck:src  # TS strict su src/ + extensions/ga4-pixel/
+npm run lint:src       # ESLint
+npm run build:ext      # bundle production storefront (vite)
 ```
 
-`shopify app dev` linka l'app al dev store, crea un tunnel, deploya le extension. Nel dev store admin: Online Store → Themes → Customize → App embeds → toggle ON "GA4 Data Layer" e impostare GTM Container ID.
+### 1.1 Dev store live
 
-### 1.1 Dev store di riferimento
+L'implementazione è attiva e validata end-to-end su `ga4-challenge-dev.myshopify.com` (Dawn, 13 prodotti, 1 multi-variante 5 colori, EUR, Bogus Gateway). Aprendo qualunque pagina con `?ga4_debug=1` compare l'overlay shadow-DOM bottom-right con timeline degli eventi e payload espandibili. Le credenziali per la storefront password (la dev store è gated come da default Shopify) sono nella mail di consegna.
 
-L'app è stata sviluppata e validata live su `ga4-challenge-dev.myshopify.com` (Dawn theme, 13 prodotti, 1 multi-variante 5 colori, valuta EUR, Bogus Gateway). Per riprodurre in autonomia su un nuovo dev store, eseguire `shopify app dev`, attivare il block embed, aprire qualsiasi PLP/PDP/cart con il flag `?ga4_debug=1` per attivare l'overlay debug in shadow DOM (bottom-right).
+## 2. Setup completo (richiede Partners account)
 
-## 2. Comandi utili
+```bash
+cp .env.example .env  # popolare GA4_MEASUREMENT_ID, GA4_API_SECRET, ecc.
+npm run shopify:dev   # link app, tunnel cloudflared, deploy extension
+```
+
+Nel dev store admin: Online Store → Themes → Customize → App embeds → toggle ON "GA4 Data Layer" + GTM Container ID. Per il pixel di checkout: Settings → Customer events → l'estensione `ga4-pixel` deve risultare attiva (auto-installata da `shopify app deploy`).
 
 | Comando | Scopo |
 |---|---|
 | `npm run dev:ext` | Vite watch su `src/` → `extensions/ga4-datalayer/assets/` |
 | `npm run shopify:dev` | Dev tunnel + extension live reload |
-| `npm test` | Vitest unit |
 | `npm run test:e2e` | Playwright e2e (richiede `SHOPIFY_DEV_STORE_URL` + `STOREFRONT_PASSWORD`) |
-| `npm run typecheck:src` | TS strict (src + extensions/ga4-pixel) |
-| `npm run build:ext` | Bundle production storefront |
-| `npm run shopify:deploy:dry` | Build verification |
+| `npm run shopify:deploy:dry` | Build verification dell'app + extensions |
 
 ## 3. Opzione scelta e motivazione
 
-**Opzione B (Shopify App, App Pixel + Theme App Extension).**
+**Opzione B (Shopify App con App Pixel + Theme App Extension).**
 
-- Brief richiede *"soluzione pensata per scalare"* → app riusabile su N store, theme no
-- Tag *"avanzata"* sull'opzione B = signal senior atteso
-- App Pixel risolve `purchase` dedup nativamente (richiesta esplicita brief)
-- Pattern moderno Shopify post-checkout-extensibility (Thank You Liquid in deprecation 2026)
-- Niente edit invasivi al tema, merchant-friendly
+- **Riusabilità**: il brief chiede una soluzione "pensata per scalare". Un'app si installa su N store senza dover patchare ogni tema; il path A si tradurrebbe in fork del tema replicati per merchant.
+- **Purchase dedup nativo**: `analytics.subscribe('checkout_completed')` fire una sola volta per ordine — Shopify garantisce l'invariante. La richiesta del brief sulla deduplicazione è risolta dall'API, non da workaround custom.
+- **Compatibilità con il roadmap Shopify**: la Thank You page Liquid è in deprecation per il 2026 in favore della checkout extensibility; un'app pixel oggi continuerà a funzionare, codice nel tema della Thank You no.
+- **Boundary chiare**: zero edit invasivi al tema. L'app embed block è on/off dal customize, il pixel è una custom integration in Customer events. Merchant-friendly e reversibile.
 
 ## 4. Architettura
 
@@ -272,13 +277,18 @@ Format: **problema** → **analisi** → **soluzione**.
   - **Analisi:** `app/entry.server.tsx` static-importava `addDocumentResponseHeaders` da `app/shopify.server.ts`, che a sua volta istanzia `PrismaSessionStorage`. Il costruttore di quest'ultimo lancia `pollForTable()` (un `prisma.session.count()` con retry) e salva la promise su `.ready`. Su /api/collect (relay GA4 puro) nessuno fa `await sessionStorage.ready`; quando Neon Postgres era pausato o pool saturato, la promise rejectava → unhandled rejection → Vercel terminava la function senza response.
   - **Soluzione:** due fix incrementali. (1) `entry.server.tsx` ora `await import('./shopify.server')` dinamico — `handleRequest` fires solo per route HTML, quindi /api/collect non triggera più il chain di import. (2) `app/shopify.server.ts` aggancia un terminal `.catch(() => undefined)` su `sessionStorage.ready` per neutralizzare la rejection a livello runtime; le route che genuinamente usano la session table (admin, auth, webhooks) continuano a fare `await sessionStorage.ready` e ricevono il `MissingSessionTableError` originale come prima.
 
+- **Zero eventi in GA4 da browser reali nonostante l'implementazione corretta**
+  - **Problema:** dai test in Playwright (locale + CI) gli eventi arrivavano regolarmente; aprendo la storefront da Chrome/Safari su desktop o mobile (geolocalizzato in IT) `window.dataLayer` continuava a popolarsi ma né il pixel di checkout caricava, né i tag GA4 di GTM facevano fire. Nessun `g/collect` né `mp/collect` outbound, nessun banner consent visibile.
+  - **Analisi:** `Shopify.customerPrivacy.analyticsProcessingAllowed` ritornava `undefined`, non `false`. Il dev store di default vende solo negli US, dove il banner Customer Privacy non è "richiesto" da Shopify e quindi non viene mostrato; per i visitatori EU questo si traduce in stato di consent mai registrato. Il pixel Strict (`ga4-pixel`) viene caricato da Shopify *solo* se `analyticsProcessingAllowed === true` — con `undefined` non parte affatto. Il datalayer storefront pusha comunque su `dataLayer`, ma il wrapper Consent Mode v2 mantiene `analytics_storage='denied'` di default, e la GA4 config tag in GTM (consent-aware) non firea. Playwright funzionava perché veniva geo-localizzato come US dal fingerprint headless, ricevendo defaults granted.
+  - **Soluzione:** il fix è di configurazione del merchant, non di codice. Admin → Settings → Markets → aggiungere EU/Italia (o il mercato target) come selling region. Una volta che esiste un mercato regolamentato, Shopify mostra automaticamente il Customer Privacy banner; al click dell'utente su Allow, `analyticsProcessingAllowed` passa a `true` → pixel carica → eventi fluiscono. Validato end-to-end con purchase reale visibile in Realtime. Il behaviour denied-by-default è GDPR-compliant by design ed è la postura corretta per produzione; l'unica differenza con il path Playwright è che lì abbiamo storage state cookie persistenti.
+
 ## 10. Cose non chiuse
 
+- **E2e Playwright contro live storefront non al 100% verde** — la suite passa quando eseguita con `workers: 1` su un dev store dedicato, ma alcuni cicli incontrano l'interstitial Cloudflare ("Your connection needs to be verified before you can proceed") che Shopify applica per source IP dopo una sequenza ravvicinata di request al dev store password gate. La soluzione production-grade è (a) far girare la suite contro un mock server con i payload di Shopify catturati una tantum, oppure (b) usare una storefront preview con auth bypass header. Pareto: a 2 giorni dalla deadline il ROI è negativo rispetto ai 46 unit test + Zod runtime + overlay debug + console snippet che già coprono la validazione richiesta dal brief; documentato come known limitation invece di forzare un fix fragile.
 - **Copertura `sendBeacon`** — usato da alcune Cart API third-party, edge case raro, non coperto. Documentato.
 - **Compatibilità Horizon** — non testata empiricamente (Horizon = nuovo reference theme Shopify 2026). Fallback `MutationObserver` dovrebbe coprire.
 - **Rate limit in-memory** — sufficiente per challenge / single-instance. Produzione multi-instance richiede Redis/Upstash.
 - **Polaris React vs Web Components** — Shopify sta migrando da React Polaris a web components (`s-page`, `s-section`). Il pannello admin usa la versione React (scaffold default); migrazione futura possibile.
-- **Consent dinamico in App Pixel** — attualmente hardcoded `denied`. TODO: leggere `customerPrivacy` API o cart attribute per popolare dinamicamente.
 
 ## 11. Cosa farei con più tempo
 
@@ -300,16 +310,17 @@ Format: **problema** → **analisi** → **soluzione**.
 5. **DNS/CSP**: whitelist `googletagmanager.com`, `google-analytics.com`. Se CSP attivo nel tema, aggiungere headers via `extensions/ga4-datalayer/blocks/ga4-embed.liquid`.
 6. **Consent Mode v2 setup**: collegare a CMP (Cookiebot, OneTrust, ecc.) o usare Shopify Customer Privacy API. Il wrapper `applyConsentDefaults()` parte denied; aggiornare via `updateConsent()` dopo scelta utente.
 7. **Relay config**: il pixel chiama `https://<your-vercel-host>/api/collect` cross-origin (`relayUrl` in `extensions/ga4-pixel/src/index.ts`). Per prod: deploy Remix app su Vercel/Fly, settare `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` come env vars server-side. CORS allowlist nel relay accetta `*.myshopify.com` + `*.shopifyapps.com` (origin Shopify pixel sandbox).
-8. **QA pre-go-live checklist**:
+8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza questo, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9, ultimo bullet). È la postura GDPR-compliant by-design dell'architettura.
+9. **QA pre-go-live checklist**:
    - [ ] Snippet console su tutte le 6 page type
    - [ ] GA4 DebugView mostra eventi reali
    - [ ] GTM Preview mode su tutti gli 8 eventi
    - [ ] App Pixel installato e attivo (admin → Customer events)
-   - [ ] Consent banner integrato
+   - [ ] Customer Privacy banner abilitato e clickabile in incognito EU
 
 ## 13. Tempo totale impiegato
 
-**Stima onesta: ~28-32h.**
+**Stima onesta: ~32-36h.**
 
 Breakdown:
 - Bootstrap (scaffold, deps, configs, smoke deploy): ~3h
@@ -327,5 +338,6 @@ Breakdown:
 - README + final smoke + screenshots: ~1.5h
 - Pixel deploy production Vercel + cross-origin pivot da App Proxy: ~2h
 - Debug end-to-end GA4 ingest (item_variant null + Prisma session storage): ~3.5h
+- Verifica delivery + e2e hardening (selettori scoped, networkidle→domcontentloaded, workers:1) + consent banner finding + README rewrite: ~3h
 
 **Tooling speedup:** Shopify MCP plugin (`learn_shopify_api`, `search_docs_chunks`, `validate_theme`, `validate_component_codeblocks`) ha verificato API/Liquid/Polaris in tempo reale, evitando WebSearch e prevenendo bug da hallucinated APIs (es: ho scoperto via MCP che il theme test-data usa `<variant-radios>` non `<variant-selects>`, e che la firma App Proxy richiede multi-value comma-join).

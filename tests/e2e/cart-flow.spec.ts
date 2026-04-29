@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { PLP_LINK_IN_GRID } from './helpers/datalayer';
 
 /**
  * Cart flow coverage: add_to_cart, view_cart, remove_from_cart.
@@ -17,9 +18,16 @@ test('add_to_cart → view_cart → remove_from_cart fires the three events with
   page,
 }) => {
   await page.goto('/collections/all');
-  await page.waitForLoadState('networkidle');
-  await page.locator('a[href*="/products/"]').first().click();
-  await page.waitForLoadState('networkidle');
+  // Dawn keeps a long-running heartbeat to Shopify telemetry endpoints,
+  // so `networkidle` rarely settles within the test timeout. The PLP
+  // anchors we click are present on `domcontentloaded`, and the
+  // dataLayer push for view_item_list runs synchronously from the
+  // entry script — switching to `domcontentloaded` avoids racing the
+  // never-idle network without losing any actionable signal.
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator(PLP_LINK_IN_GRID).first().click();
+  await page.waitForURL(/\/products\//);
+  await page.waitForLoadState('domcontentloaded');
 
   // 1) add_to_cart — driven by /cart/add.js intercept in src/adapters/cart-api.ts.
   // Match the canonical Ajax Cart API endpoints exactly: /cart/add or
@@ -55,7 +63,7 @@ test('add_to_cart → view_cart → remove_from_cart fires the three events with
 
   // 2) view_cart — driven by entry.ts when navigating to /cart
   await page.goto('/cart');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   await page.waitForFunction(
     () => (window as any).dataLayer?.some((e: any) => e?.event === 'view_cart'),
     { timeout: 5000 },

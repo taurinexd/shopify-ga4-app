@@ -67,17 +67,6 @@ function consentFromPrivacy(cp: CustomerPrivacy | undefined): {
   };
 }
 
-function tsToSeconds(ts: unknown): string {
-  // Shopify pixel `event.timestamp` is documented as an ISO 8601 string;
-  // coerce defensively to epoch seconds (also tolerate numeric runtimes).
-  if (typeof ts === "number") return String(Math.floor(ts / 1000));
-  if (typeof ts === "string") {
-    const parsed = Date.parse(ts);
-    if (!Number.isNaN(parsed)) return String(Math.floor(parsed / 1000));
-  }
-  return String(Math.floor(Date.now() / 1000));
-}
-
 async function send(relayUrl: string, body: unknown): Promise<void> {
   // The strict pixel sandbox runs as a Web Worker; navigator there is a
   // WorkerNavigator (no sendBeacon), so fetch is the only outbound option.
