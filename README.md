@@ -112,6 +112,13 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 }
 ```
 
+> **Omissioni intenzionali sui list events (`view_item_list`, `select_item`)** — rispetto allo schema brief mancano due campi:
+>
+> - **`ecommerce.value`** — il brief lo mostra come scalar (`value: 29.90`). Su una PLP con N prodotti non c'è un singolo "valore" semanticamente sensato: sommare i prezzi di tutti gli item della lista produrrebbe numeri che misrappresentano il revenue (es. €10k+ su una collezione di 13 snowboard) e contaminerebbero le metriche GA4 che si basano su `value` (purchase revenue, item revenue per session, ecc.). GA4 e [Google Analytics docs](https://developers.google.com/analytics/devguides/collection/ga4/reference/events#view_item_list) raccomandano di omettere `value` su `view_item_list` per questa ragione. `select_item` segue lo stesso pattern per coerenza.
+> - **`items[].item_variant`** — sul context PLP/click l'utente non ha ancora selezionato una variante; il Liquid `collection.products` (vedi `extensions/ga4-datalayer/blocks/ga4-embed.liquid:36-48`) non espone le varianti per non gonfiare il payload del block embed (13 prodotti × N varianti diventerebbe rapidamente kB di JSON inline). `item_variant` compare correttamente da `view_item` in poi, dove la variante è effettivamente selezionata.
+>
+> Entrambe le scelte sono GA4 best-practice e rispettano la semantica del data model; se il merchant volesse il path 100% letterale-brief, basta aggiungere `value: items.reduce((s,i) => s + i.price * i.quantity, 0)` ai due eventi list (1 riga ciascuno) ed estendere il Liquid block per includere `variants[0].title` (~5 righe).
+
 ### view_item (PDP)
 ```json
 {
