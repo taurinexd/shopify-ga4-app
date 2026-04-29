@@ -1,58 +1,64 @@
-node_modules
-.DS_Store
-
-/.cache
-/build
-/app/build
-/public/build/
-/public/_dev
-/app/public/build
-/prisma/dev.sqlite
-/prisma/dev.sqlite-journal
-database.sqlite
-.env
-.env.*
-/extensions/*/dist
-# Ignore shopify files created during app dev
-.shopify/*
-.shopify.lock# Dependencies
+# Dependencies
 node_modules/
 .pnp
 .pnp.js
+
 # Build output
+/.cache
+/build
+/app/build
+/app/public/build
+/public/build/
+/public/_dev
 dist/
-build/
 .next/
 out/
-# Shopify
+/extensions/*/dist
+
+# Theme app extension bundle — built artifact, emitted by `npm run build:ext`.
+# CI builds it on every push; tracking it in-tree just bloats the diff and
+# noisies git blame. Keep the source in src/, regenerate on demand.
+/extensions/ga4-datalayer/assets/ga4-datalayer.js
+
+# Prisma local DB (Shopify scaffold default; Neon Postgres is used in prod)
+/prisma/dev.sqlite
+/prisma/dev.sqlite-journal
+database.sqlite
+
+# Shopify CLI artifacts
 .shopify/
-.env*
+.shopify.lock
+
+# Env (never tracked, but .env.example is)
+.env
+.env.*
 !.env.example
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+
 # Testing
 coverage/
 playwright-report/
 test-results/
 .playwright/
 tests/e2e/.auth/
+
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # OS
+.DS_Store
 Thumbs.db
-# Local
+
+# Local / personal
 .local/
 *.local
 .vercel
-
-# Theme app extension bundle — built artifact, emitted by `npm run build:ext`.
-# CI builds it on every push; tracking it in-tree just bloats the diff and
-# noisies git blame. Keep the source in src/, regenerate on demand.
-/extensions/ga4-datalayer/assets/ga4-datalayer.js
