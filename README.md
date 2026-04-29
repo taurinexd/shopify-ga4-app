@@ -327,10 +327,10 @@ Format: **problema** → **analisi** → **soluzione**.
 7. **Relay config**: il pixel chiama `https://<your-vercel-host>/api/collect` cross-origin (`relayUrl` in `extensions/ga4-pixel/src/index.ts`). Per prod: deploy Remix app su Vercel/Fly, settare `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` come env vars server-side. CORS allowlist nel relay accetta `*.myshopify.com` + `*.shopifyapps.com` (origin Shopify pixel sandbox).
 8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza questo, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9, ultimo bullet). È la postura GDPR-compliant by-design dell'architettura. Setup admin: [`screenshots_1/13-shopify-admin-customer-privacy.png`](screenshots_1/13-shopify-admin-customer-privacy.png). Theme app embed e GTM Container ID: [`screenshots_1/14-shopify-theme-app-embed-toggle.png`](screenshots_1/14-shopify-theme-app-embed-toggle.png). Versions release history: [`screenshots_1/09-shopify-partners-app-versions.png`](screenshots_1/09-shopify-partners-app-versions.png).
 9. **QA pre-go-live checklist**:
-   - [ ] Snippet console su tutte le 6 page type
-   - [ ] GA4 DebugView mostra eventi reali
-   - [ ] GTM Preview mode su tutti gli 8 eventi
-   - [ ] App Pixel installato e attivo (admin → Customer events)
+   - [ ] Snippet console (`docs/gtm-debug-snippet.js`) ritorna `GA4Audit.validate() === { ok: true }` su tutte le 6 page type storefront
+   - [ ] GA4 Realtime mostra `view_item_list`, `view_item`, `add_to_cart`, `view_cart`, `begin_checkout`, `purchase` con currency/value/items popolati
+   - [ ] GTM Preview mode mostra fire dei 6 GA4 Event tags storefront sui rispettivi Custom Event triggers
+   - [ ] App Pixel installato e attivo (admin → Settings → Customer events)
    - [ ] Customer Privacy banner abilitato e clickabile in incognito EU
 
 ## 13. Tempo totale impiegato
