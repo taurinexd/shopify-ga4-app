@@ -6,7 +6,6 @@ import {
   type EntryContext,
 } from "@remix-run/node";
 import { isbot } from "isbot";
-import { addDocumentResponseHeaders } from "./shopify.server";
 
 export const streamTimeout = 5000;
 
@@ -16,6 +15,17 @@ export default async function handleRequest(
   responseHeaders: Headers,
   remixContext: EntryContext
 ) {
+  // Dynamic import: keep `shopify.server` (and its transitive Prisma
+  // session storage init) out of route bundles that never render HTML.
+  // Static import here would put PrismaSessionStorage's connection
+  // probe into every cold start of every Remix function on this
+  // deployment — including /api/collect (the GA4 relay), which has no
+  // Shopify session needs and was crashing whenever the Neon Postgres
+  // pool was paused or its connection limit was saturated.
+  // handleRequest only fires for HTML routes (loaders that render
+  // React), so this import is hot once per HTML cold-start, never on
+  // pure-API routes.
+  const { addDocumentResponseHeaders } = await import("./shopify.server");
   addDocumentResponseHeaders(request, responseHeaders);
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? '')
