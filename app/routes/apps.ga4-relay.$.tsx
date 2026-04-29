@@ -4,22 +4,26 @@ import { verifyAppProxyHmac } from '../lib/app-proxy-hmac';
 import { take } from '../lib/rate-limit';
 
 /**
- * App Proxy GA4 relay.
+ * @deprecated — kept for reference, not used by the pixel.
  *
- * Storefront pixel POSTs to `https://<shop>.myshopify.com/apps/ga4-relay/collect`,
- * which Shopify forwards to this route appending the standard proxy query
- * params (shop, logged_in_customer_id, path_prefix, timestamp, signature).
+ * Originally the strict-sandbox pixel was supposed to POST to
+ * `https://<shop>.myshopify.com/apps/ga4-relay/collect` so that Shopify's
+ * App Proxy could sign the request with HMAC before forwarding here. That
+ * route is unreachable from the strict pixel sandbox: its URL validator
+ * (`H(url)` in the worker bundle) throws RestrictedUrlError on any fetch
+ * to the worker's own host, except `/api/.../graphql.json`. The pixel
+ * therefore POSTs cross-origin to `app/routes/api.collect.tsx` instead;
+ * that endpoint is the live one. This file remains as documentation of
+ * the App Proxy + HMAC pattern, ready to be re-enabled if a future
+ * non-pixel client (e.g. a theme app extension running outside the
+ * sandbox) needs the same pipeline.
  *
- * Pipeline:
+ * Pipeline (when reached):
  *   1. HMAC verify the signature against SHOPIFY_API_SECRET.
  *   2. Token-bucket rate limit per (shop, client-ip).
  *   3. Replay guard: reject stale (ts beyond +/-60s) and duplicate `nonce`.
  *   4. Forward minimal payload to the GA4 Measurement Protocol with the
  *      server-side `api_secret`, which never leaves this process.
- *
- * The `$` splat in the filename matches `/apps/ga4-relay/<anything>` (e.g.
- * `/apps/ga4-relay/collect`), so the Liquid block / pixel can target any
- * sub-path it likes without needing a new route.
  */
 
 const REPLAY_WINDOW_MS = 60_000;
