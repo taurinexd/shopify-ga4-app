@@ -34,21 +34,22 @@ const STOREFRONT_PASSWORD = "thauly";
   // Listen for ALL frames (including pixel iframes) and workers.
   ctx.on("request", (req) => {
     const u = req.url();
-    const isInteresting =
-      u.includes("vercel.app") ||
-      u.includes("/apps/ga4-relay") ||
-      (u.includes("/api/collect") && !u.includes("/api/collect.js"));
-    if (isInteresting) {
-      console.log(`[REQ ] ${req.method()} ${u}`);
+    const isVercel = u.includes("vercel.app");
+    const isGA4 = u.includes("google-analytics.com/g/collect") || u.includes("google-analytics.com/mp/collect");
+    const isGTM = u.includes("googletagmanager.com/gtag") || u.includes("googletagmanager.com/gtm");
+    if (isVercel || isGA4 || isGTM) {
+      console.log(`[REQ ] ${req.method()} ${u.slice(0, 200)}`);
       const post = req.postData();
-      if (post) console.log(`       body: ${post.slice(0, 400)}`);
+      if (post) console.log(`       body: ${post.slice(0, 300)}`);
     }
   });
 
   ctx.on("response", (res) => {
     const u = res.url();
-    if (u.includes("vercel.app") || u.includes("/api/collect")) {
-      console.log(`[RESP] ${res.status()} ${u}`);
+    const isVercel = u.includes("vercel.app");
+    const isGA4 = u.includes("google-analytics.com/g/collect") || u.includes("google-analytics.com/mp/collect");
+    if (isVercel || isGA4) {
+      console.log(`[RESP] ${res.status()} ${u.slice(0, 200)}`);
     }
   });
 

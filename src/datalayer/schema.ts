@@ -1,15 +1,20 @@
 import { z } from 'zod';
 
+// Shopify endpoints (cart/add.js, cart.js, etc.) often return `null` for
+// optional string fields like `variant_title` on single-variant products.
+// `.optional()` allows undefined but rejects null, so we accept either.
+const optionalString = z.string().optional().nullable();
+
 export const Item = z.object({
   item_id: z.string().min(1),
   item_name: z.string().min(1),
-  item_brand: z.string().optional(),
-  item_category: z.string().optional(),
-  item_category2: z.string().optional(),
-  item_category3: z.string().optional(),
-  item_category4: z.string().optional(),
-  item_category5: z.string().optional(),
-  item_variant: z.string().optional(),
+  item_brand: optionalString,
+  item_category: optionalString,
+  item_category2: optionalString,
+  item_category3: optionalString,
+  item_category4: optionalString,
+  item_category5: optionalString,
+  item_variant: optionalString,
   price: z.number().nonnegative(),
   quantity: z.number().int().positive(),
   index: z.number().int().nonnegative().optional(),
