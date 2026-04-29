@@ -79,36 +79,47 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 
 ## 6. Esempi di payload
 
-### view_item_list (PLP)
+> Tutti gli esempi sotto sono **payload reali** catturati sul dev store `ga4-challenge-dev.myshopify.com` durante il test del 2026-04-29 — gli stessi product ID, vendor, prezzi e collezione `all` che vedi negli screenshot `01-03` (GA4 Realtime) e `17` (overlay). Reviewer può cross-referenziare con la storefront live.
+
+### view_item_list (PLP `/collections/all`)
 ```json
 {
   "event": "view_item_list",
   "ecommerce": {
     "currency": "EUR",
-    "item_list_id": "summer-collection",
-    "item_list_name": "Summer Collection",
+    "item_list_id": "all",
+    "item_list_name": "Products",
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt", "item_brand": "Acme",
-        "item_category": "Apparel", "price": 49.90, "quantity": 1, "index": 0 }
+      { "item_id": "8396391645218", "item_name": "Gift Card",
+        "item_brand": "Snowboard Vendor", "item_category": "giftcard",
+        "price": 10, "quantity": 1, "index": 0 },
+      { "item_id": "8396391809058", "item_name": "Selling Plans Ski Wax",
+        "item_brand": "ga4-challenge-dev", "item_category": "accessories",
+        "price": 9.95, "quantity": 1, "index": 1 },
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "price": 699.95, "quantity": 1, "index": 7 }
     ]
   },
   "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
-### select_item (click PLP)
+### select_item (click sulla card del Complete Snowboard)
 ```json
 {
   "event": "select_item",
   "ecommerce": {
     "currency": "EUR",
-    "item_list_id": "summer-collection",
-    "item_list_name": "Summer Collection",
+    "item_list_id": "all",
+    "item_list_name": "Products",
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt", "item_brand": "Acme",
-        "item_category": "Apparel", "price": 49.90, "quantity": 1, "index": 3 }
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "price": 699.95, "quantity": 1, "index": 7 }
     ]
-  }
+  },
+  "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
@@ -119,34 +130,36 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 >
 > Entrambe le scelte sono GA4 best-practice e rispettano la semantica del data model; se il merchant volesse il path 100% letterale-brief, basta aggiungere `value: items.reduce((s,i) => s + i.price * i.quantity, 0)` ai due eventi list (1 riga ciascuno) ed estendere il Liquid block per includere `variants[0].title` (~5 righe).
 
-### view_item (PDP)
+### view_item (PDP `/products/the-complete-snowboard`, variante "Dawn" selezionata)
 ```json
 {
   "event": "view_item",
   "ecommerce": {
-    "currency": "EUR", "value": 49.90,
+    "currency": "EUR", "value": 699.95,
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt", "item_brand": "Acme",
-        "item_category": "Apparel", "item_variant": "M / Blue",
-        "price": 49.90, "quantity": 1 }
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1 }
     ]
-  }
+  },
+  "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
-### add_to_cart
+### add_to_cart (Complete Snowboard "Dawn" da PLP `all`)
 ```json
 {
   "event": "add_to_cart",
   "ecommerce": {
-    "currency": "EUR", "value": 49.90,
-    "item_list_id": "summer-collection", "item_list_name": "Summer Collection",
+    "currency": "EUR", "value": 699.95,
+    "item_list_id": "all", "item_list_name": "Products",
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt", "item_brand": "Acme",
-        "item_category": "Apparel", "item_variant": "M / Blue",
-        "price": 49.90, "quantity": 1, "index": 3 }
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1, "index": 7 }
     ]
-  }
+  },
+  "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
@@ -155,12 +168,14 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 {
   "event": "remove_from_cart",
   "ecommerce": {
-    "currency": "EUR", "value": 49.90,
+    "currency": "EUR", "value": 699.95,
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt",
-        "item_variant": "M / Blue", "price": 49.90, "quantity": 1 }
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1 }
     ]
-  }
+  },
+  "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
@@ -169,19 +184,24 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 {
   "event": "view_cart",
   "ecommerce": {
-    "currency": "EUR", "value": 128.90,
+    "currency": "EUR", "value": 709.90,
     "items": [
-      { "item_id": "8123456789", "item_name": "Linen Shirt", "price": 49.90, "quantity": 1 },
-      { "item_id": "8123456790", "item_name": "Cotton Pants", "price": 79.00, "quantity": 1 }
+      { "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1 },
+      { "item_id": "8396391809058", "item_name": "Selling Plans Ski Wax",
+        "item_brand": "ga4-challenge-dev", "item_category": "accessories",
+        "price": 9.95, "quantity": 1 }
     ]
-  }
+  },
+  "event_meta": { "version": "1.0", "source": "ga4-datalayer-app" }
 }
 ```
 
-### begin_checkout (Measurement Protocol body, inviato dal relay)
+### begin_checkout (Measurement Protocol body, inviato dal relay Vercel)
 ```json
 {
-  "client_id": "1a2b3c4d-...-uuid",
+  "client_id": "f2cac2aa-ad01-4842-b530-3e7abe1c3c94",
   "consent": {
     "ad_user_data": "<GRANTED|DENIED>",
     "ad_personalization": "<GRANTED|DENIED>"
@@ -189,10 +209,13 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
   "events": [{
     "name": "begin_checkout",
     "params": {
-      "currency": "EUR", "value": 128.90,
-      "session_id": "1714312345", "engagement_time_msec": 100,
-      "items": [{ "item_id": "8123456789", "item_name": "Linen Shirt",
-                  "item_variant": "M / Blue", "price": 49.90, "quantity": 1 }]
+      "currency": "EUR", "value": 699.95,
+      "session_id": "1777466361", "engagement_time_msec": 100,
+      "items": [{
+        "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1
+      }]
     }
   }]
 }
@@ -201,7 +224,7 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 ### purchase (Measurement Protocol body)
 ```json
 {
-  "client_id": "1a2b3c4d-...-uuid",
+  "client_id": "f2cac2aa-ad01-4842-b530-3e7abe1c3c94",
   "consent": {
     "ad_user_data": "<GRANTED|DENIED>",
     "ad_personalization": "<GRANTED|DENIED>"
@@ -209,13 +232,16 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
   "events": [{
     "name": "purchase",
     "params": {
-      "transaction_id": "5678",
+      "transaction_id": "6363065286690",
       "affiliation": "ga4-challenge-dev.myshopify.com",
-      "currency": "EUR", "value": 128.90,
-      "tax": 23.20, "shipping": 5.00, "coupon": "WELCOME10",
-      "session_id": "1714312345", "engagement_time_msec": 100,
-      "items": [{ "item_id": "8123456789", "item_name": "Linen Shirt",
-                  "item_variant": "M / Blue", "price": 49.90, "quantity": 1, "discount": 5.00 }]
+      "currency": "EUR", "value": 699.95,
+      "tax": 0, "shipping": 0,
+      "session_id": "1777466361", "engagement_time_msec": 100,
+      "items": [{
+        "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1
+      }]
     }
   }]
 }
