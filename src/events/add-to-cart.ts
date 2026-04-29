@@ -1,5 +1,6 @@
 import type { GA4EventT } from '../datalayer/schema';
 import { LAST_CLICKED_KEY } from './select-item';
+import { optionalItemFields } from '../datalayer/items';
 
 interface CartAddResponse {
   product_id: string | number;
@@ -38,9 +39,11 @@ export function buildAddToCart(resp: CartAddResponse): GA4EventT {
       items: [{
         item_id: String(resp.product_id),
         item_name: resp.title,
-        item_brand: resp.vendor,
-        item_category: resp.product_type,
-        item_variant: resp.variant_title,
+        ...optionalItemFields({
+          brand: resp.vendor,
+          category: resp.product_type,
+          variant: resp.variant_title,
+        }),
         price,
         quantity: resp.quantity,
         ...(listAttr.index !== undefined ? { index: listAttr.index } : {}),

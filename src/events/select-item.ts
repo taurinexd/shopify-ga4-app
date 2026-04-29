@@ -1,5 +1,6 @@
 import type { GA4Context } from '../adapters/liquid-context';
 import type { GA4EventT } from '../datalayer/schema';
+import { optionalItemFields } from '../datalayer/items';
 
 export const LAST_CLICKED_KEY = 'ga4_last_clicked_item';
 
@@ -25,8 +26,7 @@ export function bindSelectItem(ctx: GA4Context, push: (e: GA4EventT) => void): v
         items: [{
           item_id: String(product.id),
           item_name: product.title,
-          item_brand: product.vendor,
-          item_category: product.type,
+          ...optionalItemFields({ brand: product.vendor, category: product.type }),
           price: product.price,
           quantity: 1,
           index: idx,

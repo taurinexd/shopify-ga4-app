@@ -1,5 +1,6 @@
 import type { GA4Context } from '../adapters/liquid-context';
 import type { GA4EventT } from '../datalayer/schema';
+import { optionalItemFields } from '../datalayer/items';
 
 export function buildViewItemList(ctx: GA4Context): GA4EventT | null {
   const c = ctx.page.collection;
@@ -12,8 +13,7 @@ export function buildViewItemList(ctx: GA4Context): GA4EventT | null {
       items: c.products.map((p, idx) => ({
         item_id: String(p.id),
         item_name: p.title,
-        item_brand: p.vendor,
-        item_category: p.type,
+        ...optionalItemFields({ brand: p.vendor, category: p.type }),
         price: p.price,
         quantity: 1,
         index: idx,

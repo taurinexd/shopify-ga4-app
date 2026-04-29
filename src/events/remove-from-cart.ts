@@ -1,5 +1,6 @@
 import type { GA4EventT } from '../datalayer/schema';
 import { hasPendingUserAction } from '../adapters/cart-api';
+import { optionalItemFields } from '../datalayer/items';
 
 interface CartLine {
   variant_id: string | number;
@@ -34,9 +35,11 @@ export function handleCartChange(
         items: [{
           item_id: String(prevLine.product_id),
           item_name: prevLine.title,
-          item_brand: prevLine.vendor,
-          item_category: prevLine.product_type,
-          item_variant: prevLine.variant_title,
+          ...optionalItemFields({
+            brand: prevLine.vendor,
+            category: prevLine.product_type,
+            variant: prevLine.variant_title,
+          }),
           price: unit,
           quantity: removedQty,
         }],

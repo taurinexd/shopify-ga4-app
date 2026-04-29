@@ -1,4 +1,5 @@
 import type { GA4EventT } from '../datalayer/schema';
+import { optionalItemFields } from '../datalayer/items';
 
 interface CartState {
   currency?: string;
@@ -28,9 +29,11 @@ export function buildViewCart(cart: CartState): GA4EventT | null {
         return {
           item_id: String(line.product_id),
           item_name: line.title,
-          item_brand: line.vendor,
-          item_category: line.product_type,
-          item_variant: line.variant_title,
+          ...optionalItemFields({
+            brand: line.vendor,
+            category: line.product_type,
+            variant: line.variant_title,
+          }),
           price: unit,
           quantity: line.quantity,
         };
