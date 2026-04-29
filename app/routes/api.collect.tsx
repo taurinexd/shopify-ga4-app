@@ -358,9 +358,23 @@ export async function action({
     );
   }
 
-  const mpUrl = `https://www.google-analytics.com/mp/collect?measurement_id=${encodeURIComponent(
-    measurementId,
-  )}&api_secret=${encodeURIComponent(apiSecret)}`;
+  // Forward the BUYER's IP and User-Agent to GA4 (not the relay's own
+  // datacenter IP and Node UA). Without this, GA4's automatic bot
+  // filter drops events from server-side senders that look like bots
+  // even when the upstream is a real buyer (Vercel datacenter ranges
+  // are commonly on bot lists). `ip_override` is a documented GA4 MP
+  // query param; the User-Agent header is read directly by GA4 from
+  // the incoming MP request.
+  const xff = request.headers.get('x-forwarded-for');
+  const buyerIp = xff?.split(',')[0]?.trim() ?? null;
+  const buyerUa = request.headers.get('user-agent');
+
+  const mpParams = new URLSearchParams({
+    measurement_id: measurementId,
+    api_secret: apiSecret,
+  });
+  if (buyerIp) mpParams.set('ip_override', buyerIp);
+  const mpUrl = `https://www.google-analytics.com/mp/collect?${mpParams.toString()}`;
 
   // GA4 Measurement Protocol's `consent` field supports ONLY two keys:
   // `ad_user_data` and `ad_personalization`. The other GA4 Consent Mode
@@ -398,9 +412,13 @@ export async function action({
     // wrong consent casing, etc.) — those become silent drops. Validation
     // diagnostics are only available from /debug/mp/collect, which is out
     // of scope for the live ingest path.
+    const fwdHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (buyerUa) fwdHeaders['User-Agent'] = buyerUa.slice(0, 512);
     const resp = await fetch(mpUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: fwdHeaders,
       body: JSON.stringify(mpBody),
     });
     forwardStatus = resp.status;
