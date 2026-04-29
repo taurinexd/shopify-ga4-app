@@ -362,17 +362,23 @@ export async function action({
     measurementId,
   )}&api_secret=${encodeURIComponent(apiSecret)}`;
 
-  // GA4 Measurement Protocol requires consent values to be uppercase
-  // ("GRANTED" | "DENIED"); any other casing causes silent rejection of
-  // the entire event payload (no error returned, just dropped).
+  // GA4 Measurement Protocol's `consent` field supports ONLY two keys:
+  // `ad_user_data` and `ad_personalization`. The other GA4 Consent Mode
+  // v2 keys (`ad_storage`, `analytics_storage`, `functionality_storage`,
+  // `personalization_storage`, `security_storage`) are gtag.js-side only
+  // — sending them in the MP payload causes the WHOLE request to be
+  // silently rejected with `no such field` (verified via /debug/mp/collect).
+  // Values must also be uppercase 'GRANTED' | 'DENIED'; any other casing
+  // is silently dropped too.
+  // Reference: https://developers.google.com/analytics/devguides/collection/protocol/ga4/sending-events#consent
+  const MP_CONSENT_KEYS = new Set(['ad_user_data', 'ad_personalization']);
   const normalizeConsent = (raw: unknown): Record<string, string> | undefined => {
     if (!raw || typeof raw !== 'object') return undefined;
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === 'string') {
-        const upper = v.trim().toUpperCase();
-        if (upper === 'GRANTED' || upper === 'DENIED') out[k] = upper;
-      }
+      if (!MP_CONSENT_KEYS.has(k) || typeof v !== 'string') continue;
+      const upper = v.trim().toUpperCase();
+      if (upper === 'GRANTED' || upper === 'DENIED') out[k] = upper;
     }
     return Object.keys(out).length > 0 ? out : undefined;
   };
