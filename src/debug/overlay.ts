@@ -49,6 +49,7 @@ export function initOverlay(): void {
   header.className = 'header';
   header.innerHTML = `<strong>GA4 DataLayer Debug</strong> <span id="count">0</span>
     <span style="flex:1"></span>
+    <button id="filter" title="Cycle filter (GA / GTM / All)">GA</button>
     <button id="copy">Copy</button>
     <button id="clear">Clear</button>`;
   root.appendChild(header);
@@ -57,6 +58,21 @@ export function initOverlay(): void {
   root.appendChild(list);
 
   const STORAGE_KEY = 'ga4_debug_events';
+  const FILTER_KEY = 'ga4_debug_filter';
+  type FilterMode = 'ga' | 'gtm' | 'all';
+  const FILTER_ORDER: FilterMode[] = ['ga', 'gtm', 'all'];
+  const FILTER_LABEL: Record<FilterMode, string> = { ga: 'GA', gtm: 'GTM', all: 'All' };
+  const FILTER_TITLE: Record<FilterMode, string> = {
+    ga: 'Showing GA4 events only — click to cycle (GA → GTM → All)',
+    gtm: 'Showing GTM internal events only — click to cycle (GTM → All → GA)',
+    all: 'Showing all events — click to cycle (All → GA → GTM)',
+  };
+  let filterMode: FilterMode = (() => {
+    try {
+      const stored = sessionStorage.getItem(FILTER_KEY);
+      return (stored === 'ga' || stored === 'gtm' || stored === 'all') ? stored : 'ga';
+    } catch { return 'ga'; }
+  })();
   const events: Array<{ payload: unknown; valid: boolean; ts: number }> = (() => {
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY);
@@ -70,20 +86,58 @@ export function initOverlay(): void {
     } catch {}
   }
 
-  const SYSTEM_EVENTS = new Set(['gtm.js']);
-  function isSystemPayload(p: unknown): boolean {
+  // Internal "noise" payloads we always hide regardless of filter mode:
+  // - `gtag('consent', ...)` calls land in dataLayer as a 3-element array,
+  //   not as `{event: ...}` — never user-meaningful.
+  // - The single-key `{ga4_client_id: ...}` we push at boot to expose the
+  //   cid to GTM tags is a marker, not a tracked event.
+  function isInternalNoise(p: unknown): boolean {
     if (Array.isArray(p) && p[0] === 'consent') return true;
     if (typeof p === 'object' && p !== null) {
       const o = p as Record<string, unknown>;
       if (typeof o.ga4_client_id === 'string' && Object.keys(o).length === 1) return true;
-      if (typeof o.event === 'string' && SYSTEM_EVENTS.has(o.event)) return true;
     }
     return false;
   }
 
+  // Brief-canonical GA4 event names (the 8 the spec mandates). Includes
+  // both valid and validation-failed pushes — a dropped `view_item` is
+  // still a GA4-intent event the developer wants to see in GA mode.
+  const GA_EVENT_NAMES = new Set([
+    'view_item_list', 'select_item', 'view_item',
+    'add_to_cart', 'remove_from_cart', 'view_cart',
+    'begin_checkout', 'purchase',
+  ]);
+
+  function isGaEvent(p: unknown): boolean {
+    if (typeof p !== 'object' || p === null) return false;
+    const name = (p as Record<string, unknown>).event;
+    return typeof name === 'string' && GA_EVENT_NAMES.has(name);
+  }
+
+  function isGtmEvent(p: unknown): boolean {
+    if (typeof p !== 'object' || p === null) return false;
+    const name = (p as Record<string, unknown>).event;
+    return typeof name === 'string' && name.startsWith('gtm.');
+  }
+
+  function isVisible(p: unknown): boolean {
+    if (isInternalNoise(p)) return false;
+    if (filterMode === 'ga') return isGaEvent(p);
+    if (filterMode === 'gtm') return isGtmEvent(p);
+    return true;
+  }
+
+  function updateFilterButton(): void {
+    const btn = shadow.getElementById('filter') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.textContent = FILTER_LABEL[filterMode];
+    btn.title = FILTER_TITLE[filterMode];
+  }
+
   function render(): void {
     list.innerHTML = '';
-    const visible = events.filter((e) => !isSystemPayload(e.payload));
+    const visible = events.filter((e) => isVisible(e.payload));
     visible.slice().reverse().forEach((e) => {
       const row = document.createElement('div');
       row.className = `row ${e.valid ? '' : 'invalid'}`;
@@ -102,14 +156,30 @@ export function initOverlay(): void {
     (shadow.getElementById('count') as HTMLElement).textContent = String(visible.length);
   }
 
+  shadow.getElementById('filter')!.addEventListener('click', () => {
+    const next = (FILTER_ORDER.indexOf(filterMode) + 1) % FILTER_ORDER.length;
+    filterMode = FILTER_ORDER[next];
+    try { sessionStorage.setItem(FILTER_KEY, filterMode); } catch {}
+    updateFilterButton();
+    render();
+  });
   shadow.getElementById('copy')!.addEventListener('click', () => {
-    navigator.clipboard.writeText(JSON.stringify(events, null, 2));
+    // Copy respects the current filter — if the user is hiding GTM noise,
+    // pasting into a ticket shouldn't include it either.
+    const visible = events.filter((e) => isVisible(e.payload));
+    navigator.clipboard.writeText(JSON.stringify(visible, null, 2));
   });
   shadow.getElementById('clear')!.addEventListener('click', () => {
+    // Clear also respects the filter — removes only the events currently
+    // shown so the user can prune GTM chatter without losing the GA4
+    // events captured so far (or vice-versa).
+    const keepers = events.filter((e) => !isVisible(e.payload));
     events.length = 0;
+    events.push(...keepers);
     persist();
     render();
   });
+  updateFilterButton();
 
   const w = window as any;
   w.dataLayer = w.dataLayer || [];
