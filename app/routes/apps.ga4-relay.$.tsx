@@ -4,19 +4,26 @@ import { verifyAppProxyHmac } from '../lib/app-proxy-hmac';
 import { take } from '../lib/rate-limit';
 
 /**
- * @deprecated — kept for reference, not used by the pixel.
+ * App Proxy GA4 relay — kept callable but **not used by the pixel**.
  *
- * Originally the strict-sandbox pixel was supposed to POST to
- * `https://<shop>.myshopify.com/apps/ga4-relay/collect` so that Shopify's
- * App Proxy could sign the request with HMAC before forwarding here. That
- * route is unreachable from the strict pixel sandbox: its URL validator
- * (`H(url)` in the worker bundle) throws RestrictedUrlError on any fetch
- * to the worker's own host, except `/api/.../graphql.json`. The pixel
- * therefore POSTs cross-origin to `app/routes/api.collect.tsx` instead;
- * that endpoint is the live one. This file remains as documentation of
- * the App Proxy + HMAC pattern, ready to be re-enabled if a future
- * non-pixel client (e.g. a theme app extension running outside the
- * sandbox) needs the same pipeline.
+ * Why the pixel doesn't use it: the strict pixel sandbox runs in an
+ * isolated Web Worker on `webpixels.shopifyapps.com`, but its URL
+ * validator (the `H(url)` function in the sandbox runtime) throws
+ * `RestrictedUrlError` on any fetch whose host matches the merchant's
+ * `<shop>.myshopify.com` origin (except for `/api/.../graphql.json`).
+ * App Proxy URLs all live on that origin (`/apps/<prefix>/...`), so they
+ * are categorically unreachable from the pixel. The pixel therefore
+ * POSTs cross-origin to `app/routes/api.collect.tsx` (this Vercel host),
+ * which validates Origin + shop string instead of relying on App Proxy
+ * HMAC.
+ *
+ * This route is still live and will accept signed POSTs from any client
+ * that *can* hit `/apps/ga4-relay/collect` on the shop domain — namely
+ * Liquid theme app extension blocks running on the storefront page,
+ * embedded JS that ships with the app, or server-to-server calls that
+ * have negotiated an App Proxy signature. We keep it as a working
+ * reference of the App Proxy + HMAC pattern in case a future non-pixel
+ * caller needs the cluster-correct identity verification it provides.
  *
  * Pipeline (when reached):
  *   1. HMAC verify the signature against SHOPIFY_API_SECRET.
