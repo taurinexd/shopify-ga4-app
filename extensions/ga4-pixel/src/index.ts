@@ -12,22 +12,36 @@ interface MPItem {
 }
 
 function lineItemsToMP(lines: any[]): MPItem[] {
-  return lines.map((l) => ({
-    item_id: String(l.variant?.product?.id ?? l.variant?.id ?? ""),
-    item_name: l.title ?? l.variant?.product?.title ?? "",
-    item_brand: l.variant?.product?.vendor,
-    item_category: l.variant?.product?.type,
-    item_variant: l.variant?.title,
-    price: Number(
-      l.variant?.price?.amount ?? l.finalLinePrice?.amount ?? 0,
-    ),
-    quantity: l.quantity ?? 1,
-    discount:
-      l.discountAllocations?.reduce(
-        (s: number, d: any) => s + Number(d.amount?.amount ?? 0),
-        0,
-      ) || undefined,
-  }));
+  return lines.map((l) => {
+    // GA4 MP rejects items with null-valued params (silent drop on the
+    // live /mp/collect endpoint, but visible as VALUE_INVALID via
+    // /debug/mp/collect). Shopify's checkout payload routinely returns
+    // `variant.title === null` for products with a single default
+    // variant — including item_variant with that null value would cause
+    // the entire purchase event to be silently dropped from Realtime
+    // and standard reports. Build the item incrementally and only
+    // include optional fields when they're non-null/undefined strings.
+    const item: Record<string, unknown> = {
+      item_id: String(l.variant?.product?.id ?? l.variant?.id ?? ""),
+      item_name: l.title ?? l.variant?.product?.title ?? "",
+      price: Number(
+        l.variant?.price?.amount ?? l.finalLinePrice?.amount ?? 0,
+      ),
+      quantity: l.quantity ?? 1,
+    };
+    const brand = l.variant?.product?.vendor;
+    if (typeof brand === "string" && brand) item.item_brand = brand;
+    const category = l.variant?.product?.type;
+    if (typeof category === "string" && category) item.item_category = category;
+    const variant = l.variant?.title;
+    if (typeof variant === "string" && variant) item.item_variant = variant;
+    const discount = l.discountAllocations?.reduce(
+      (s: number, d: any) => s + Number(d.amount?.amount ?? 0),
+      0,
+    );
+    if (typeof discount === "number" && discount > 0) item.discount = discount;
+    return item as unknown as MPItem;
+  });
 }
 
 type CustomerPrivacy = {
