@@ -342,16 +342,33 @@ Format: **problema** → **analisi** → **soluzione**.
 
 ## 11. Cosa farei con più tempo
 
-- **Server-side GA4** via Shopify Function/Webhook per redundancy ad-blocker-proof
-- **A/B test del tracking layer** (toggle versioni via `event_meta.version`, comparare data quality)
-- **BigQuery export pipeline** GA4 → BQ per analisi avanzate cross-channel
-- **Looker Studio template** dashboard con funnel view_item→add_to_cart→purchase, AOV per source
-- **Multi-store config via metafield** per merchant con N store (centralized GTM config)
-- **Test su Horizon theme** empirico per validare cross-theme compat
-- **Migration a Polaris web components** + `@shopify/polaris-types`
-- **Redis-based rate limit + nonce store** per multi-instance deploy
+Raggruppato per tema così il reviewer può scorrere alla parte che gli interessa. I tag `[Tier 1]` / `[Tier 2]` sui bullet di coverage indicano il valore atteso (Tier 1 = il merchant li chiederebbe in mese 1; Tier 2 = nice-to-have dipendente dal verticale).
+
+### 11.1 Espansione coverage GA4 events
+
+- **[Tier 1] Checkout funnel intermedio** — il brief copre `begin_checkout` (ingresso) e `purchase` (uscita), ma non i 2-3 step tra. Senza questi eventi l'analytics non risponde a *"a che point del checkout perdo i buyer?"*. Aggiungere subscription nel pixel: `analytics.subscribe('checkout_shipping_info_submitted', ...)` → GA4 `add_shipping_info`, `analytics.subscribe('payment_info_submitted', ...)` → GA4 `add_payment_info`. Stesso pattern dei begin_checkout/purchase, ~30min di lavoro, abilita funnel reports completi.
+- **[Tier 1] Refund tracking** via webhook Shopify `orders/refunded` — endpoint `/api/refund` parallelo a `/api/collect`, riceve l'order payload, mappa a GA4 MP `refund` event con `transaction_id` + `value` parziale o full. Senza, il revenue su GA4 sovrastima perché i resi non sono mai detratti. Sostituisce il bullet generico precedente "Server-side GA4 via Shopify webhook" rendendolo concreto: refund è il caso d'uso reale di webhook→MP, non "redundancy ad-blocker-proof".
+- **[Tier 1] Search tracking** — Shopify espone `analytics.subscribe('search_submitted', ...)` con `event.data.searchResult.query`. Mappa a GA4 standard `search` event con `search_term`. Ecommerce-critico per merchant con catalogo medio-grande: capire cosa la gente cerca → roadmap prodotti. ~15min.
+- **[Tier 2] Promotion tracking** (`view_promotion`, `select_promotion`) — quando l'utente vede/clicca un banner promo (homepage hero, "10% off summer"). Richiede di instrumentare i banner con `data-promotion-id` + nome via Liquid; click delegate sulla storefront e dispatch per `view_promotion` su intersection observer.
+- **[Tier 2] Account events** (`sign_up`, `login`) — Shopify Customer Events `customer_account.created` / `customer_account.signed_in`. Mapping diretto a GA4 standard. Utile per audience analysis (logged-in vs guest cart abandonment rate, LTV per segment).
+
+### 11.2 Robustezza data delivery
+
 - **Server-side fallback per browser privacy-strict** — webhook Shopify `orders/create` → relay → GA4 MP. Recupera il cohort di buyer su Brave/Comet/ETP Strict che oggi è not-tracked (vedi §10). Trade-off: niente attribution session/cookie, `client_id` da inferire (`order.note_attributes.ga4_cid` se persistito a checkout, altrimenti hash deterministico da `customer.email`).
 - **First-party proxy per gtag.js** — alias `googletagmanager.com` su un sub-dominio del merchant (es. `cdn.shop.com/gtm.js`) via Vercel rewrite. Bypassa le tracker blocklist network-layer. Decisione etica del merchant: rispettare il signal di blocco o aggirarlo è un trade-off di postura privacy che va deciso con legal, non in default.
+- **Redis-based rate limit + nonce store** per multi-instance deploy del relay (oggi è in-memory per-container, sufficiente per single-instance Vercel ma non garantisce one-shot replay protection cluster-wide).
+
+### 11.3 Tooling & data pipeline
+
+- **A/B test del tracking layer** — toggle versioni via `event_meta.version` già presente nei payload (`"version": "1.0", "source": "ga4-datalayer-app"`). Compare data quality fra versioni durante un rollout incrementale del data layer.
+- **BigQuery export pipeline** GA4 → BQ per analisi avanzate cross-channel + retention >14 mesi (limite GA4 free tier).
+- **Looker Studio template** — dashboard con funnel view_item → add_to_cart → begin_checkout → purchase, AOV per source/medium, item revenue per category, drop-off rate per checkout step (richiede 11.1 checkout funnel).
+
+### 11.4 Compatibilità & migration
+
+- **Multi-store config via metafield** — merchant con N store (es. .com / .uk / .it) condividono la stessa app ma necessitano GTM Container ID + GA4 Measurement ID per-shop. Spostare la config da `block.settings.gtm_id` (per-block) a metafield shop-level + UI admin per gestirla centralmente.
+- **Test su Horizon theme** empirico — Horizon è il nuovo reference theme Shopify 2026 (replacement di Dawn). Fallback `MutationObserver` su `input[name="id"]` dovrebbe coprire ma non è verificato.
+- **Migration a Polaris web components** (`s-page`, `s-section`, `s-card`) + `@shopify/polaris-types`. Il pannello admin usa la versione React Polaris (default scaffold); Shopify sta deprecando React Polaris in favore di web components.
 
 ## 12. Collegamento a GTM/GA4 in produzione
 
