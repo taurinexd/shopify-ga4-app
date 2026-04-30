@@ -9,7 +9,28 @@ const STYLES = `
   display: block !important;
   font-family: system-ui, sans-serif;
   contain: layout style;
+  transition: width 180ms ease, max-height 180ms ease;
 }
+:host(.collapsed) {
+  width: 56px !important;
+  max-height: 56px !important;
+}
+:host(.collapsed) .root { display: none; }
+.collapsed-pill {
+  display: none;
+  width: 56px; height: 56px;
+  background: #111; color: #4ade80;
+  border-radius: 50%;
+  align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(0,0,0,.3);
+  border: 2px solid #222;
+  user-select: none;
+  letter-spacing: 0.3px;
+}
+.collapsed-pill:hover { background: #1a1a1a; }
+:host(.collapsed) .collapsed-pill { display: flex; }
 .root {
   width: 100%;
   max-height: 60vh;
@@ -24,13 +45,95 @@ const STYLES = `
   position: sticky; top: 0;
 }
 .header strong { color: #4ade80; }
+.empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.empty-state .icon {
+  display: block;
+  font-size: 28px;
+  margin-bottom: 10px;
+  opacity: 0.4;
+}
+.empty-state .hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+  color: #555;
+}
+@keyframes ga4-slide-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 .row { padding: 6px 12px; border-bottom: 1px solid #333; cursor: pointer; }
 .row.invalid { background: #5b1d1d; }
+.row.is-new { animation: ga4-slide-in 200ms ease-out; }
 .row .name { font-weight: 600; }
 .row .ts { color: #888; font-size: 10px; margin-left: 6px; }
 pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; padding: 8px 12px; background: #0a0a0a; margin: 0; }
+.json-key { color: #93c5fd; }
+.json-str { color: #fca5a5; }
+.json-num { color: #fcd34d; }
+.json-bool { color: #c4b5fd; }
+.json-null { color: #c4b5fd; font-style: italic; }
 button { background: #333; color: #f0f0f0; border: 0; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+button:hover { background: #444; }
 `;
+
+const HTML_ESC: Record<string, string> = {
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+};
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => HTML_ESC[c]);
+}
+
+const JSON_TOKEN =
+  /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}[\],:]|\s+/g;
+
+/**
+ * Tokenise JSON.stringify output and wrap each token in a span with a
+ * semantic class so the overlay payload can be syntax-highlighted via
+ * shadow CSS. Tokens are HTML-escaped before concatenation; XSS-safe even
+ * if a Liquid attribute leaks markup into the dataLayer.
+ */
+function highlightJson(value: unknown): string {
+  let json: string;
+  try {
+    json = JSON.stringify(value, null, 2);
+  } catch {
+    return escapeHtml(String(value));
+  }
+  if (json === undefined) return '';
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  JSON_TOKEN.lastIndex = 0;
+  while ((m = JSON_TOKEN.exec(json)) !== null) {
+    if (m.index > last) out += escapeHtml(json.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith('"')) {
+      const after = json.slice(m.index + tok.length);
+      const cls = /^\s*:/.test(after) ? 'json-key' : 'json-str';
+      out += `<span class="${cls}">${escapeHtml(tok)}</span>`;
+    } else if (/^[-\d]/.test(tok)) {
+      out += `<span class="json-num">${escapeHtml(tok)}</span>`;
+    } else if (tok === 'true' || tok === 'false') {
+      out += `<span class="json-bool">${tok}</span>`;
+    } else if (tok === 'null') {
+      out += `<span class="json-null">${tok}</span>`;
+    } else {
+      out += escapeHtml(tok);
+    }
+    last = m.index + tok.length;
+  }
+  if (last < json.length) out += escapeHtml(json.slice(last));
+  return out;
+}
+
+const FRESH_WINDOW_MS = 600;
 
 export function initOverlay(): void {
   if (document.getElementById('ga4-debug-overlay')) return;
@@ -42,6 +145,12 @@ export function initOverlay(): void {
   style.textContent = STYLES;
   shadow.appendChild(style);
 
+  const collapsedPill = document.createElement('div');
+  collapsedPill.className = 'collapsed-pill';
+  collapsedPill.title = 'Click to expand GA4 debug overlay';
+  collapsedPill.textContent = 'DL';
+  shadow.appendChild(collapsedPill);
+
   const root = document.createElement('div');
   root.className = 'root';
   shadow.appendChild(root);
@@ -51,7 +160,8 @@ export function initOverlay(): void {
     <span style="flex:1"></span>
     <button id="filter" title="Cycle filter (GA / GTM / All)">GA</button>
     <button id="copy">Copy</button>
-    <button id="clear">Clear</button>`;
+    <button id="clear">Clear</button>
+    <button id="collapse" title="Collapse to pill">−</button>`;
   root.appendChild(header);
   const list = document.createElement('div');
   list.id = 'list';
@@ -59,6 +169,10 @@ export function initOverlay(): void {
 
   const STORAGE_KEY = 'ga4_debug_events';
   const FILTER_KEY = 'ga4_debug_filter';
+  const COLLAPSED_KEY = 'ga4_debug_collapsed';
+  try {
+    if (sessionStorage.getItem(COLLAPSED_KEY) === '1') host.classList.add('collapsed');
+  } catch { /* sessionStorage may be blocked in private mode */ }
   type FilterMode = 'ga' | 'gtm' | 'all';
   const FILTER_ORDER: FilterMode[] = ['ga', 'gtm', 'all'];
   const FILTER_LABEL: Record<FilterMode, string> = { ga: 'GA', gtm: 'GTM', all: 'All' };
@@ -135,25 +249,48 @@ export function initOverlay(): void {
     btn.title = FILTER_TITLE[filterMode];
   }
 
+  function renderEmptyState(): void {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const filterHint =
+      filterMode === 'ga'
+        ? 'Open a collection or product page to see GA4 events.'
+        : filterMode === 'gtm'
+          ? 'No GTM lifecycle events captured yet.'
+          : 'Waiting for any dataLayer push.';
+    empty.innerHTML = `<span class="icon">◌</span>
+      Waiting for events…
+      <span class="hint">${filterHint}</span>`;
+    list.appendChild(empty);
+  }
+
   function render(): void {
     list.innerHTML = '';
     const visible = events.filter((e) => isVisible(e.payload));
-    visible.slice().reverse().forEach((e) => {
-      const row = document.createElement('div');
-      row.className = `row ${e.valid ? '' : 'invalid'}`;
-      const name = (e.payload as any)?.event ?? '<unknown>';
-      row.innerHTML = `<span class="name">${e.valid ? '✓' : '✗'} ${name}</span>
-        <span class="ts">${new Date(e.ts).toLocaleTimeString()}</span>`;
-      const pre = document.createElement('pre');
-      pre.style.display = 'none';
-      pre.textContent = JSON.stringify(e.payload, null, 2);
-      row.appendChild(pre);
-      row.addEventListener('click', () => {
-        pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+    if (visible.length === 0) {
+      renderEmptyState();
+    } else {
+      const now = Date.now();
+      visible.slice().reverse().forEach((e) => {
+        const row = document.createElement('div');
+        const isNew = now - e.ts < FRESH_WINDOW_MS;
+        row.className = `row ${e.valid ? '' : 'invalid'} ${isNew ? 'is-new' : ''}`.trim();
+        const name = (e.payload as { event?: unknown })?.event ?? '<unknown>';
+        const safeName = escapeHtml(String(name));
+        row.innerHTML = `<span class="name">${e.valid ? '✓' : '✗'} ${safeName}</span>
+          <span class="ts">${new Date(e.ts).toLocaleTimeString()}</span>`;
+        const pre = document.createElement('pre');
+        pre.style.display = 'none';
+        pre.innerHTML = highlightJson(e.payload);
+        row.appendChild(pre);
+        row.addEventListener('click', () => {
+          pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+        });
+        list.appendChild(row);
       });
-      list.appendChild(row);
-    });
+    }
     (shadow.getElementById('count') as HTMLElement).textContent = String(visible.length);
+    collapsedPill.textContent = visible.length > 99 ? '99+' : String(visible.length);
   }
 
   shadow.getElementById('filter')!.addEventListener('click', () => {
@@ -179,6 +316,12 @@ export function initOverlay(): void {
     persist();
     render();
   });
+  function setCollapsed(next: boolean): void {
+    host.classList.toggle('collapsed', next);
+    try { sessionStorage.setItem(COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+  }
+  shadow.getElementById('collapse')!.addEventListener('click', () => setCollapsed(true));
+  collapsedPill.addEventListener('click', () => setCollapsed(false));
   updateFilterButton();
 
   const w = window as any;
