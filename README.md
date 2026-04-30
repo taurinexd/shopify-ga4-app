@@ -25,7 +25,7 @@ La cartella [`screenshots_1/`](screenshots_1/) contiene 17 screenshot della solu
 - **01–03** GA4: panoramica eventi Realtime, utenti attivi, drilldown params di un `purchase`
 - **04–08** GTM container Storefront: tag, trigger, variabili, cartelle, panoramica
 - **09–14** Shopify: Partners app versions (release `ga4-datalayer-18`), admin status panel custom (Polaris), themes, app overview, customer privacy con banner, theme embed block on
-- **15–17** Infra & live proof: deploy Vercel, GitHub checks all-green, overlay sulla storefront in modalità GA
+- **15–17** Infrastruttura: deploy Vercel, repo GitHub con CI verde, overlay sulla storefront in modalità GA
 
 ## 2. Setup completo (richiede Partners account)
 
@@ -81,7 +81,7 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 
 ## 6. Esempi di payload
 
-> Tutti gli esempi sotto sono **payload reali** catturati sul dev store `ga4-challenge-dev.myshopify.com` durante il test del 2026-04-29 — gli stessi product ID, vendor, prezzi e collezione `all` che vedi negli screenshot `01-03` (GA4 Realtime) e `17` (overlay). Reviewer può cross-referenziare con la storefront live.
+> Payload reali catturati sul dev store `ga4-challenge-dev.myshopify.com` durante i test del 2026-04-29: stessi product ID, vendor, prezzi e collezione `all` degli screenshot `01-03` (GA4 Realtime) e `17` (overlay).
 
 ### view_item_list (PLP `/collections/all`)
 ```json
@@ -319,9 +319,9 @@ Type GA4Audit.last("view_item") for last payload
 
 ## 8. Magento 2 vs Shopify
 
-Vedi `docs/magento-vs-shopify.md` per il confronto completo (8 pillar + premessa onesta).
+Confronto completo in `docs/magento-vs-shopify.md` su 8 pillar architetturali.
 
-> **Nota:** la mia esperienza pratica è su altre piattaforme; il confronto è **research-based**, ricostruito da Adobe Commerce DevDocs e codice open-source `Magento_GoogleTagManager`. Disclosure esplicita in apertura del doc.
+> Premessa: la mia esperienza pratica è su altre piattaforme, non Magento 2. Il confronto è ricostruito da Adobe Commerce DevDocs e dal codice open-source di `Magento_GoogleTagManager`; lo specifico in apertura del doc per chiarezza.
 
 ## 9. Problemi incontrati e risoluzioni
 
@@ -376,20 +376,20 @@ Format: **problema** → **analisi** → **soluzione**.
 - **GA4 `Percorso di pagamento` mostrava 3/4 step a 0% — mancavano 2 eventi standard**
   - **Problema:** validando i dati via GA4 → Reports → Aumentare le vendite → `Percorso di pagamento`, gli step `Aggiungi spedizione` e `Aggiungi metodo di pagamento` risultavano sempre vuoti (drop-off 100% allo step `Inizia pagamento`), e `Acquista` veniva conteggiato solo via `canalizzazione aperta` perché la sequenza chiusa si rompeva a metà funnel. Il merchant non poteva rispondere alla domanda *"a che punto del checkout perdo i buyer?"* — la canalizzazione era cieca tra ingresso checkout e ordine completato.
   - **Analisi:** brief richiede esplicitamente solo `begin_checkout` e `purchase`, ma la canalizzazione standard di GA4 si aspetta i 2 step intermedi `add_shipping_info` e `add_payment_info` per raccontare il funnel. Senza, qualunque report cross-step (Funnel exploration, Percorso di pagamento, Looker Studio dashboard) collassa tra l'inizio e la fine del checkout.
-  - **Soluzione:** estensione *oltre* il brief — 2 nuove `analytics.subscribe()` nel pixel: `checkout_shipping_info_submitted` → GA4 `add_shipping_info` (con `shipping_tier` da `shippingLine.title`), `payment_info_submitted` → GA4 `add_payment_info` (con `payment_type` da `transactions[0].gateway` con fallback su `paymentMethod.{name,type}` per resilienza tra gateway). Allowlist relay `app/routes/api.collect.tsx` aggiornata da 2 a 4 eventi consentiti. Decisione presa per completezza analytics: il delta ROI per il merchant (funnel report popolato) supera il costo di 2 subscribe + 1 line nell'allowlist. Marcato come "scoperto via GA4 + risolto pre-delivery" invece di lasciato in §11 "with more time".
+  - **Soluzione:** 2 nuove `analytics.subscribe()` nel pixel — `checkout_shipping_info_submitted` → `add_shipping_info` (con `shipping_tier` da `shippingLine.title`), `payment_info_submitted` → `add_payment_info` (con `payment_type` da `transactions[0].gateway`, fallback su `paymentMethod.{name,type}` per coprire gateway diversi). Allowlist relay `app/routes/api.collect.tsx` estesa da 2 a 4 eventi. Va oltre i requisiti esplicitati dal brief; senza, il funnel report di GA4 resta cieco a metà checkout — per due righe di codice in più ha senso averlo coperto.
 
 - **Zero eventi in GA4 da browser reali nonostante l'implementazione corretta**
   - **Problema:** dai test in Playwright (locale + CI) gli eventi arrivavano regolarmente; aprendo la storefront da Chrome/Safari su desktop o mobile (geolocalizzato in IT) `window.dataLayer` continuava a popolarsi ma né il pixel di checkout caricava, né i tag GA4 di GTM facevano fire. Nessun `g/collect` né `mp/collect` outbound, nessun banner consent visibile.
   - **Analisi:** `Shopify.customerPrivacy.analyticsProcessingAllowed` ritornava `undefined`, non `false`. Il dev store di default vende solo negli US, dove il banner Customer Privacy non è "richiesto" da Shopify e quindi non viene mostrato; per i visitatori EU questo si traduce in stato di consent mai registrato. Il pixel Strict (`ga4-pixel`) viene caricato da Shopify *solo* se `analyticsProcessingAllowed === true` — con `undefined` non parte affatto. Il datalayer storefront pusha comunque su `dataLayer`, ma il wrapper Consent Mode v2 mantiene `analytics_storage='denied'` di default, e la GA4 config tag in GTM (consent-aware) non firea. Le sessioni Playwright vedevano consent granted perché riutilizzavano lo storage state cookie persistente dalla prima esecuzione di `globalSetup`, che a sua volta aveva ottenuto consent in un contesto headless dove Shopify non aveva forzato il banner — per visitatori reali freschi questo non è mai vero senza il banner.
-  - **Soluzione:** il fix è di configurazione del merchant, non di codice. Admin → Settings → Markets → aggiungere EU/Italia (o il mercato target) come selling region. Una volta che esiste un mercato regolamentato, Shopify mostra automaticamente il Customer Privacy banner; al click dell'utente su Allow, `analyticsProcessingAllowed` passa a `true` → pixel carica → eventi fluiscono. Validato end-to-end con purchase reale visibile in Realtime. Il behaviour denied-by-default è GDPR-compliant by design ed è la postura corretta per produzione; l'unica differenza con il path Playwright è che lì abbiamo storage state cookie persistenti.
+  - **Soluzione:** è una configurazione del merchant, non un fix nel codice. Admin → Settings → Markets → aggiungere EU/Italia (o il mercato target) come selling region. Una volta che esiste un mercato regolamentato, Shopify mostra il Customer Privacy banner; al click su Allow, `analyticsProcessingAllowed` passa a `true`, il pixel viene caricato e gli eventi fluiscono. Verificato con un purchase reale che è arrivato in Realtime. Il comportamento denied-by-default è quello che GDPR si aspetta in produzione; in Playwright la differenza è solo che lo storage state cookie persistente di `globalSetup` aveva consent già concesso.
 
 ## 10. Cose non chiuse
 
-- **E2e Playwright contro live storefront non al 100% verde** — la suite passa quando eseguita con `workers: 1` su un dev store dedicato, ma alcuni cicli incontrano l'interstitial Cloudflare ("Your connection needs to be verified before you can proceed") che Shopify applica per source IP dopo una sequenza ravvicinata di request al dev store password gate. La soluzione production-grade è (a) far girare la suite contro un mock server con i payload di Shopify catturati una tantum, oppure (b) usare una storefront preview con auth bypass header. Pareto: a 2 giorni dalla deadline il ROI è negativo rispetto ai 46 unit test + Zod runtime + overlay debug + console snippet che già coprono la validazione richiesta dal brief; documentato come known limitation invece di forzare un fix fragile.
+- **E2e Playwright contro live storefront non al 100% verde** — la suite passa quando eseguita con `workers: 1` su un dev store dedicato, ma alcuni cicli incontrano l'interstitial Cloudflare ("Your connection needs to be verified before you can proceed") che Shopify applica per source IP dopo una sequenza ravvicinata di request al dev store password gate. La via production-grade è (a) far girare la suite contro un mock server con i payload di Shopify catturati una tantum, oppure (b) usare una storefront preview con auth bypass header. La validazione richiesta dal brief è già coperta dai 46 unit test + schema Zod runtime + overlay debug + console snippet, quindi ho preferito documentare il limite invece di forzare un fix fragile.
 
 - **`checkout-purchase.spec.ts` marcato `test.fixme`** — il pre-payment flow (PDP → add to cart → /checkout → email + country=Italy + shipping address + continue) drive correttamente via `getByLabel`. Il blocker è il payment step: Shopify's modern checkout wraps i card fields in iframe PCI separati (`Field container for: Card number/Expiry/CVV/Name`), che `getByLabel` del top frame non attraversa. Fix richiede `page.frameLocator(...)` con selettori interni Shopify che cambiano fra revisioni. Helper `tests/e2e/helpers/checkout.ts` è già in place per chi voglia hardenare l'iframe step in futuro; `purchase` resta validato end-to-end manualmente contro GA4 Realtime (vedi screenshot `01-03`), e l'unit/integration coverage del path relay (`app/routes/api.collect.tsx` schema, rate limit, replay nonce, `ip_override`) è completa.
 
-- **Privacy-focused browser → tracking by-design assente** — Brave, Comet, Firefox ETP Strict, Safari ITP avanzato bloccano sia i domini noti (`googletagmanager.com`, `*.google-analytics.com`) tramite blocklist network-layer, sia inviano `Sec-GPC: 1` che Shopify Customer Privacy interpreta come consent denied (l'App Pixel Strict non viene caricato). Risultato: 0 eventi GA da quei browser, sia storefront sia checkout. Verificato empiricamente su Comet vs Chrome vanilla — Chrome fa fluire tutto, Comet droppa tutto. Non è un bug, è la postura privacy-respectful corretta: il merchant accetta una coverage gap single-digit % (cohort di buyer su browser privacy-strict) e in cambio rispetta la scelta del visitatore. Mitigazioni out-of-scope (server-side tracking via Shopify webhooks, first-party gtag proxy) sono elencate in §11.
+- **Privacy-focused browser** — Brave, Comet, Firefox ETP Strict, Safari ITP avanzato bloccano i domini noti (`googletagmanager.com`, `*.google-analytics.com`) a livello network e inviano `Sec-GPC: 1` che Shopify Customer Privacy interpreta come consent denied (l'App Pixel Strict non viene caricato). Risultato: nessun evento GA da quei browser, sia storefront sia checkout. Verificato empiricamente su Comet vs Chrome vanilla — Chrome fa fluire tutto, Comet droppa tutto. È il comportamento atteso: il merchant accetta una piccola coverage gap (single-digit % di traffico privacy-strict) in cambio del rispetto della scelta del visitatore. Le due mitigazioni possibili (server-side tracking via webhook Shopify, first-party gtag proxy) sono in §11.
 - **Copertura `sendBeacon`** — usato da alcune Cart API third-party, edge case raro, non coperto. Documentato.
 - **Compatibilità Horizon** — non testata empiricamente (Horizon = nuovo reference theme Shopify 2026). Fallback `MutationObserver` dovrebbe coprire.
 - **Rate limit in-memory** — sufficiente per challenge / single-instance. Produzione multi-instance richiede Redis/Upstash.
@@ -397,20 +397,18 @@ Format: **problema** → **analisi** → **soluzione**.
 
 ## 11. Cosa farei con più tempo
 
-Raggruppato per tema così il reviewer può scorrere alla parte che gli interessa. I tag `[Tier 1]` / `[Tier 2]` sui bullet di coverage indicano il valore atteso (Tier 1 = il merchant li chiederebbe in mese 1; Tier 2 = nice-to-have dipendente dal verticale).
-
 ### 11.1 Espansione coverage GA4 events
 
-- ~~**[Tier 1] Checkout funnel intermedio**~~ — **DONE in pre-delivery, vedi §9** dopo aver scoperto via canalizzazione GA4 che gli step intermedi erano a 0%. `add_shipping_info` e `add_payment_info` sono ora tracciati dal pixel (`extensions/ga4-pixel/src/index.ts`).
-- **[Tier 1] Refund tracking** via webhook Shopify `orders/refunded` — endpoint `/api/refund` parallelo a `/api/collect`, riceve l'order payload, mappa a GA4 MP `refund` event con `transaction_id` + `value` parziale o full. Senza, il revenue su GA4 sovrastima perché i resi non sono mai detratti. Sostituisce il bullet generico precedente "Server-side GA4 via Shopify webhook" rendendolo concreto: refund è il caso d'uso reale di webhook→MP, non "redundancy ad-blocker-proof".
-- **[Tier 1] Search tracking** — Shopify espone `analytics.subscribe('search_submitted', ...)` con `event.data.searchResult.query`. Mappa a GA4 standard `search` event con `search_term`. Ecommerce-critico per merchant con catalogo medio-grande: capire cosa la gente cerca → roadmap prodotti. ~15min.
-- **[Tier 2] Promotion tracking** (`view_promotion`, `select_promotion`) — quando l'utente vede/clicca un banner promo (homepage hero, "10% off summer"). Richiede di instrumentare i banner con `data-promotion-id` + nome via Liquid; click delegate sulla storefront e dispatch per `view_promotion` su intersection observer.
-- **[Tier 2] Account events** (`sign_up`, `login`) — Shopify Customer Events `customer_account.created` / `customer_account.signed_in`. Mapping diretto a GA4 standard. Utile per audience analysis (logged-in vs guest cart abandonment rate, LTV per segment).
+- ~~**Checkout funnel intermedio**~~ — implementato pre-consegna dopo aver visto in GA4 il `Percorso di pagamento` con 3 step a 0%, vedi §9. `add_shipping_info` e `add_payment_info` sono ora tracciati dal pixel.
+- **Refund tracking** via webhook Shopify `orders/refunded` — endpoint `/api/refund` parallelo a `/api/collect`, riceve l'order payload e manda a GA4 MP un evento `refund` con `transaction_id` + `value`. Senza, il revenue su GA4 sovrastima perché i resi non vengono mai detratti.
+- **Search tracking** — Shopify espone `analytics.subscribe('search_submitted', ...)` con `event.data.searchResult.query`. Mappa a un evento GA4 `search` standard con `search_term`. Su un catalogo medio-grande è uno dei segnali più utili per la roadmap prodotti.
+- **Promotion tracking** (`view_promotion`, `select_promotion`) — quando l'utente vede o clicca un banner promo. Richiede di instrumentare i banner con `data-promotion-id` + nome via Liquid e un click/IntersectionObserver delegate sulla storefront.
+- **Account events** (`sign_up`, `login`) da `customer_account.created` / `customer_account.signed_in`. Servono per separare i comportamenti logged-in vs guest in GA4.
 
 ### 11.2 Robustezza data delivery
 
-- **Server-side fallback per browser privacy-strict** — webhook Shopify `orders/create` → relay → GA4 MP. Recupera il cohort di buyer su Brave/Comet/ETP Strict che oggi è not-tracked (vedi §10). Trade-off: niente attribution session/cookie, `client_id` da inferire (`order.note_attributes.ga4_cid` se persistito a checkout, altrimenti hash deterministico da `customer.email`).
-- **First-party proxy per gtag.js** — alias `googletagmanager.com` su un sub-dominio del merchant (es. `cdn.shop.com/gtm.js`) via Vercel rewrite. Bypassa le tracker blocklist network-layer. Decisione etica del merchant: rispettare il signal di blocco o aggirarlo è un trade-off di postura privacy che va deciso con legal, non in default.
+- **Server-side fallback per browser privacy-strict** — webhook Shopify `orders/create` → relay → GA4 MP. Recupera la fascia di buyer su Brave/Comet/ETP Strict che oggi non è tracciata (vedi §10). Lo svantaggio è che si perde l'attribution session/cookie e il `client_id` va inferito: o da `order.note_attributes.ga4_cid` se è stato persistito a checkout, oppure da un hash deterministico su `customer.email`.
+- **First-party proxy per gtag.js** — alias `googletagmanager.com` su un sub-dominio del merchant (es. `cdn.shop.com/gtm.js`) via Vercel rewrite. Bypassa le tracker blocklist network-layer. È una scelta che il merchant deve fare con il proprio team legale: rispettare il blocco o aggirarlo è un trade-off di postura privacy, non un default.
 - **Redis-based rate limit + nonce store** per multi-instance deploy del relay (oggi è in-memory per-container, sufficiente per single-instance Vercel ma non garantisce one-shot replay protection cluster-wide).
 
 ### 11.3 Tooling & data pipeline
@@ -428,13 +426,13 @@ Raggruppato per tema così il reviewer può scorrere alla parte che gli interess
 ## 12. Collegamento a GTM/GA4 in produzione
 
 1. **Setup GTM container**: importare `docs/gtm-container.json` in un nuovo container web (Admin → Import Container → Choose file). Sostituire `G-XXXXXXX` con il proprio Measurement ID GA4. Il template, una volta importato, dovrebbe replicare la struttura dei [screenshots `04..08`](screenshots_1/) (6 GA4 Event tag + 6 Custom Event trigger + 4 DLV `ecommerce.*` variables).
-2. **Estendere container**: il template include 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 4 checkout events (begin_checkout, add_shipping_info, add_payment_info, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay → niente tag GTM richiesto.
+2. **Estendere container**: il template include i 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 4 eventi checkout (begin_checkout, add_shipping_info, add_payment_info, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay, quindi non servono tag GTM per loro.
 3. **GA4 property config**: creare property → Web data stream → enhanced measurement attivo. Misurare con `Realtime` + `DebugView` durante test.
 4. **Measurement Protocol API secret**: Admin → Data streams → click stream → "Measurement Protocol API secrets" → Create. Inserire in `.env` come `GA4_API_SECRET` (consumato server-side dal relay, mai esposto al client).
 5. **DNS/CSP**: whitelist `googletagmanager.com`, `google-analytics.com`. Se CSP attivo nel tema, aggiungere headers via `extensions/ga4-datalayer/blocks/ga4-embed.liquid`.
 6. **Consent Mode v2 setup**: collegare a CMP (Cookiebot, OneTrust, ecc.) o usare Shopify Customer Privacy API. Il wrapper `applyConsentDefaults()` parte denied; aggiornare via `updateConsent()` dopo scelta utente.
 7. **Relay config**: il pixel chiama `https://<your-vercel-host>/api/collect` cross-origin (`relayUrl` in `extensions/ga4-pixel/src/index.ts`). Per prod: deploy Remix app su Vercel/Fly, settare `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` come env vars server-side. CORS allowlist nel relay accetta `*.myshopify.com` + `*.shopifyapps.com` (origin Shopify pixel sandbox).
-8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza questo, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9, ultimo bullet). È la postura GDPR-compliant by-design dell'architettura. Setup admin: [`screenshots_1/13-shopify-admin-customer-privacy.png`](screenshots_1/13-shopify-admin-customer-privacy.png). Theme app embed e GTM Container ID: [`screenshots_1/14-shopify-theme-app-embed-toggle.png`](screenshots_1/14-shopify-theme-app-embed-toggle.png). Versions release history: [`screenshots_1/09-shopify-partners-app-versions.png`](screenshots_1/09-shopify-partners-app-versions.png).
+8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9). Setup admin: [`screenshots_1/13-shopify-admin-customer-privacy.png`](screenshots_1/13-shopify-admin-customer-privacy.png). Theme app embed e GTM Container ID: [`screenshots_1/14-shopify-theme-app-embed-toggle.png`](screenshots_1/14-shopify-theme-app-embed-toggle.png). Release history: [`screenshots_1/09-shopify-partners-app-versions.png`](screenshots_1/09-shopify-partners-app-versions.png).
 9. **QA pre-go-live checklist**:
    - [ ] Snippet console (`docs/gtm-debug-snippet.js`) ritorna `GA4Audit.validate() === { ok: true }` su tutte le 6 page type storefront
    - [ ] GA4 Realtime mostra `view_item_list`, `view_item`, `add_to_cart`, `view_cart`, `begin_checkout`, `purchase` con currency/value/items popolati
@@ -444,7 +442,7 @@ Raggruppato per tema così il reviewer può scorrere alla parte che gli interess
 
 ## 13. Tempo totale impiegato
 
-**Stima onesta: ~32-36h.**
+**~32-36h.**
 
 Breakdown:
 - Bootstrap (scaffold, deps, configs, smoke deploy): ~3h
@@ -464,4 +462,4 @@ Breakdown:
 - Debug end-to-end GA4 ingest (item_variant null + Prisma session storage): ~3.5h
 - Verifica delivery + e2e hardening (selettori scoped, networkidle→domcontentloaded, workers:1) + consent banner finding + README rewrite: ~3h
 
-**Tooling speedup:** Shopify MCP plugin (`learn_shopify_api`, `search_docs_chunks`, `validate_theme`, `validate_component_codeblocks`) ha verificato API/Liquid/Polaris in tempo reale, evitando WebSearch e prevenendo bug da hallucinated APIs (es: ho scoperto via MCP che il theme test-data usa `<variant-radios>` non `<variant-selects>`, e che la firma App Proxy richiede multi-value comma-join).
+Buona parte del tempo è stato risparmiato grazie al plugin MCP di Shopify (`learn_shopify_api`, `search_docs_chunks`, `validate_theme`, `validate_component_codeblocks`), che ha permesso di verificare API, Liquid e Polaris contro la documentazione ufficiale invece di affidarsi a memoria o ricerca generica. Per esempio: il theme `test-data` del dev store usa `<variant-radios>` invece di `<variant-selects>` e la firma App Proxy HMAC vuole il comma-join multi-value — entrambe scoperte e gestite via MCP nelle prime ore di lavoro.
