@@ -7,11 +7,11 @@ App Shopify che espone un **data layer GA4-ready** per eventi storefront (Theme 
 Tutto il codice del data layer (eventi storefront + schema + adapter cart/variant) è verificabile **senza credenziali Shopify Partners**:
 
 ```bash
-npm install
-npm test               # 46 unit test (vitest)
-npm run typecheck:src  # TS strict su src/ + extensions/ga4-pixel/
-npm run lint:src       # ESLint
-npm run build:ext      # bundle production storefront (vite)
+npm install --legacy-peer-deps  # flag richiesto da peer dep di @shopify/cli; Vercel build usa lo stesso
+npm test                        # 46 unit test (vitest)
+npm run typecheck:src           # TS strict su src/ + extensions/ga4-pixel/
+npm run lint:src                # ESLint
+npm run build:ext               # bundle production storefront (vite)
 ```
 
 ### 1.1 Dev store live
