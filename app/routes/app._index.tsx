@@ -184,6 +184,8 @@ export default function Index() {
                 <List.Item>remove_from_cart (user-initiated only)</List.Item>
                 <List.Item>view_cart</List.Item>
                 <List.Item>begin_checkout (App Pixel)</List.Item>
+                <List.Item>add_shipping_info (App Pixel)</List.Item>
+                <List.Item>add_payment_info (App Pixel)</List.Item>
                 <List.Item>purchase (App Pixel, dedup nativo)</List.Item>
               </List>
             </BlockStack>
