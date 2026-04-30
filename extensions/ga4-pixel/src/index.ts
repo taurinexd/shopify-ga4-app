@@ -170,6 +170,74 @@ register(({ analytics, init, customerPrivacy: privacyApi }) => {
     });
   });
 
+  // GA4 standard ecommerce events for the *intermediate* checkout
+  // funnel steps (Shopify's `Percorso di pagamento` report needs them
+  // populated to render abandonment per step). Same payload shape as
+  // begin_checkout; `shipping_tier` and `payment_type` are GA4
+  // recommended params, omitted when the source is null/empty so we
+  // don't trip the same null-rejection that bit `item_variant` on the
+  // pixel side (see README §9).
+  analytics.subscribe("checkout_shipping_info_submitted", async (event) => {
+    const evAny = event as any;
+    const checkout = evAny?.data?.checkout;
+    if (!checkout) return;
+    const params: Record<string, unknown> = {
+      currency: checkout.currencyCode,
+      value: Number(checkout.totalPrice?.amount ?? 0),
+      session_id: sessionId,
+      engagement_time_msec: 100,
+      items: lineItemsToMP(checkout.lineItems ?? []),
+    };
+    const tier = checkout.shippingLine?.title;
+    if (typeof tier === "string" && tier) params.shipping_tier = tier;
+    const coupon = checkout.discountApplications?.[0]?.title;
+    if (typeof coupon === "string" && coupon) params.coupon = coupon;
+    await send(relayUrl, {
+      shop,
+      client_id: cid,
+      ts: Date.now(),
+      nonce: newNonce(),
+      consent,
+      events: [{ name: "add_shipping_info", params }],
+    });
+  });
+
+  analytics.subscribe("payment_info_submitted", async (event) => {
+    const evAny = event as any;
+    const checkout = evAny?.data?.checkout;
+    if (!checkout) return;
+    const params: Record<string, unknown> = {
+      currency: checkout.currencyCode,
+      value: Number(checkout.totalPrice?.amount ?? 0),
+      session_id: sessionId,
+      engagement_time_msec: 100,
+      items: lineItemsToMP(checkout.lineItems ?? []),
+    };
+    // Shopify exposes the chosen payment method via two complementary
+    // paths depending on the checkout revision: the legacy
+    // `paymentMethod.{name,type}` shape on `event.data.checkout` (or
+    // `event.data` directly), and the modern `transactions[].gateway`
+    // string (e.g. "bogus", "shopify_payments", "shop_pay", "gift_card").
+    // Falling back through all three keeps `payment_type` populated
+    // across gateway/Shopify-revision combinations; if all are
+    // absent we omit the param so GA4 doesn't aggregate a `null`
+    // bucket in the `Percorso di pagamento` report.
+    const pm = evAny?.data?.checkout?.paymentMethod ?? evAny?.data?.paymentMethod;
+    const tx = evAny?.data?.checkout?.transactions?.[0];
+    const paymentType = pm?.name ?? pm?.type ?? tx?.gateway;
+    if (typeof paymentType === "string" && paymentType) params.payment_type = paymentType;
+    const coupon = checkout.discountApplications?.[0]?.title;
+    if (typeof coupon === "string" && coupon) params.coupon = coupon;
+    await send(relayUrl, {
+      shop,
+      client_id: cid,
+      ts: Date.now(),
+      nonce: newNonce(),
+      consent,
+      events: [{ name: "add_payment_info", params }],
+    });
+  });
+
   analytics.subscribe("checkout_completed", async (event) => {
     const evAny = event as any;
     const checkout = evAny?.data?.checkout;

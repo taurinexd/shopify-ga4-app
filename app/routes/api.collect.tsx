@@ -102,7 +102,12 @@ function safeReason(e: unknown): string {
  */
 
 const REPLAY_WINDOW_MS = 60_000;
-const ALLOWED_EVENTS = new Set(['begin_checkout', 'purchase']);
+const ALLOWED_EVENTS = new Set([
+  'begin_checkout',
+  'add_shipping_info',
+  'add_payment_info',
+  'purchase',
+]);
 const SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 
 interface NonceEntry {

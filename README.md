@@ -73,6 +73,8 @@ Vedi `docs/architecture.md` per il diagramma Mermaid completo. In sintesi:
 | remove_from_cart | `src/events/remove-from-cart.ts` | fetch/XHR interceptor su `/cart/change.js` (solo user-initiated, gated by `pendingUserActions`) |
 | view_cart | `src/events/view-cart.ts` | `DOMContentLoaded` su template `cart` (l'interceptor `/cart.js` aggiorna lo stato per il diff `remove_from_cart` ma non rifira `view_cart` per evitare doppi push sui drawer reload) |
 | begin_checkout | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('checkout_started')` |
+| add_shipping_info | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('checkout_shipping_info_submitted')` |
+| add_payment_info | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('payment_info_submitted')` |
 | purchase | `extensions/ga4-pixel/src/index.ts` | `analytics.subscribe('checkout_completed')` |
 
 Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga4-embed.liquid`. Relay attivo: `app/routes/api.collect.tsx` (Vercel public endpoint, validazione Origin + shop + schema + rate limit + replay nonce). Relay App Proxy reference: `app/routes/apps.ga4-relay.$.tsx` (deprecato per il pixel, vedi docstring).
@@ -221,6 +223,54 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 }
 ```
 
+### add_shipping_info (Measurement Protocol body, fired da `checkout_shipping_info_submitted`)
+```json
+{
+  "client_id": "f2cac2aa-ad01-4842-b530-3e7abe1c3c94",
+  "consent": {
+    "ad_user_data": "<GRANTED|DENIED>",
+    "ad_personalization": "<GRANTED|DENIED>"
+  },
+  "events": [{
+    "name": "add_shipping_info",
+    "params": {
+      "currency": "EUR", "value": 699.95,
+      "shipping_tier": "Standard",
+      "session_id": "1777466361", "engagement_time_msec": 100,
+      "items": [{
+        "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1
+      }]
+    }
+  }]
+}
+```
+
+### add_payment_info (Measurement Protocol body, fired da `payment_info_submitted`)
+```json
+{
+  "client_id": "f2cac2aa-ad01-4842-b530-3e7abe1c3c94",
+  "consent": {
+    "ad_user_data": "<GRANTED|DENIED>",
+    "ad_personalization": "<GRANTED|DENIED>"
+  },
+  "events": [{
+    "name": "add_payment_info",
+    "params": {
+      "currency": "EUR", "value": 699.95,
+      "payment_type": "(per test) Gateway di simulazione",
+      "session_id": "1777466361", "engagement_time_msec": 100,
+      "items": [{
+        "item_id": "8396391776290", "item_name": "The Complete Snowboard",
+        "item_brand": "Snowboard Vendor", "item_category": "snowboard",
+        "item_variant": "Dawn", "price": 699.95, "quantity": 1
+      }]
+    }
+  }]
+}
+```
+
 ### purchase (Measurement Protocol body)
 ```json
 {
@@ -323,6 +373,11 @@ Format: **problema** → **analisi** → **soluzione**.
   - **Analisi:** `app/entry.server.tsx` static-importava `addDocumentResponseHeaders` da `app/shopify.server.ts`, che a sua volta istanzia `PrismaSessionStorage`. Il costruttore di quest'ultimo lancia `pollForTable()` (un `prisma.session.count()` con retry) e salva la promise su `.ready`. Su /api/collect (relay GA4 puro) nessuno fa `await sessionStorage.ready`; quando Neon Postgres era pausato o pool saturato, la promise rejectava → unhandled rejection → Vercel terminava la function senza response.
   - **Soluzione:** due fix incrementali. (1) `entry.server.tsx` ora `await import('./shopify.server')` dinamico — `handleRequest` fires solo per route HTML, quindi /api/collect non triggera più il chain di import. (2) `app/shopify.server.ts` aggancia un terminal `.catch(() => undefined)` su `sessionStorage.ready` per neutralizzare la rejection a livello runtime; le route che genuinamente usano la session table (admin, auth, webhooks) continuano a fare `await sessionStorage.ready` e ricevono il `MissingSessionTableError` originale come prima.
 
+- **GA4 `Percorso di pagamento` mostrava 3/4 step a 0% — mancavano 2 eventi standard**
+  - **Problema:** validando i dati via GA4 → Reports → Aumentare le vendite → `Percorso di pagamento`, gli step `Aggiungi spedizione` e `Aggiungi metodo di pagamento` risultavano sempre vuoti (drop-off 100% allo step `Inizia pagamento`), e `Acquista` veniva conteggiato solo via `canalizzazione aperta` perché la sequenza chiusa si rompeva a metà funnel. Il merchant non poteva rispondere alla domanda *"a che punto del checkout perdo i buyer?"* — la canalizzazione era cieca tra ingresso checkout e ordine completato.
+  - **Analisi:** brief richiede esplicitamente solo `begin_checkout` e `purchase`, ma la canalizzazione standard di GA4 si aspetta i 2 step intermedi `add_shipping_info` e `add_payment_info` per raccontare il funnel. Senza, qualunque report cross-step (Funnel exploration, Percorso di pagamento, Looker Studio dashboard) collassa tra l'inizio e la fine del checkout.
+  - **Soluzione:** estensione *oltre* il brief — 2 nuove `analytics.subscribe()` nel pixel: `checkout_shipping_info_submitted` → GA4 `add_shipping_info` (con `shipping_tier` da `shippingLine.title`), `payment_info_submitted` → GA4 `add_payment_info` (con `payment_type` da `transactions[0].gateway` con fallback su `paymentMethod.{name,type}` per resilienza tra gateway). Allowlist relay `app/routes/api.collect.tsx` aggiornata da 2 a 4 eventi consentiti. Decisione presa per completezza analytics: il delta ROI per il merchant (funnel report popolato) supera il costo di 2 subscribe + 1 line nell'allowlist. Marcato come "scoperto via GA4 + risolto pre-delivery" invece di lasciato in §11 "with more time".
+
 - **Zero eventi in GA4 da browser reali nonostante l'implementazione corretta**
   - **Problema:** dai test in Playwright (locale + CI) gli eventi arrivavano regolarmente; aprendo la storefront da Chrome/Safari su desktop o mobile (geolocalizzato in IT) `window.dataLayer` continuava a popolarsi ma né il pixel di checkout caricava, né i tag GA4 di GTM facevano fire. Nessun `g/collect` né `mp/collect` outbound, nessun banner consent visibile.
   - **Analisi:** `Shopify.customerPrivacy.analyticsProcessingAllowed` ritornava `undefined`, non `false`. Il dev store di default vende solo negli US, dove il banner Customer Privacy non è "richiesto" da Shopify e quindi non viene mostrato; per i visitatori EU questo si traduce in stato di consent mai registrato. Il pixel Strict (`ga4-pixel`) viene caricato da Shopify *solo* se `analyticsProcessingAllowed === true` — con `undefined` non parte affatto. Il datalayer storefront pusha comunque su `dataLayer`, ma il wrapper Consent Mode v2 mantiene `analytics_storage='denied'` di default, e la GA4 config tag in GTM (consent-aware) non firea. Le sessioni Playwright vedevano consent granted perché riutilizzavano lo storage state cookie persistente dalla prima esecuzione di `globalSetup`, che a sua volta aveva ottenuto consent in un contesto headless dove Shopify non aveva forzato il banner — per visitatori reali freschi questo non è mai vero senza il banner.
@@ -346,7 +401,7 @@ Raggruppato per tema così il reviewer può scorrere alla parte che gli interess
 
 ### 11.1 Espansione coverage GA4 events
 
-- **[Tier 1] Checkout funnel intermedio** — il brief copre `begin_checkout` (ingresso) e `purchase` (uscita), ma non i 2-3 step tra. Senza questi eventi l'analytics non risponde a *"a che point del checkout perdo i buyer?"*. Aggiungere subscription nel pixel: `analytics.subscribe('checkout_shipping_info_submitted', ...)` → GA4 `add_shipping_info`, `analytics.subscribe('payment_info_submitted', ...)` → GA4 `add_payment_info`. Stesso pattern dei begin_checkout/purchase, ~30min di lavoro, abilita funnel reports completi.
+- ~~**[Tier 1] Checkout funnel intermedio**~~ — **DONE in pre-delivery, vedi §9** dopo aver scoperto via canalizzazione GA4 che gli step intermedi erano a 0%. `add_shipping_info` e `add_payment_info` sono ora tracciati dal pixel (`extensions/ga4-pixel/src/index.ts`).
 - **[Tier 1] Refund tracking** via webhook Shopify `orders/refunded` — endpoint `/api/refund` parallelo a `/api/collect`, riceve l'order payload, mappa a GA4 MP `refund` event con `transaction_id` + `value` parziale o full. Senza, il revenue su GA4 sovrastima perché i resi non sono mai detratti. Sostituisce il bullet generico precedente "Server-side GA4 via Shopify webhook" rendendolo concreto: refund è il caso d'uso reale di webhook→MP, non "redundancy ad-blocker-proof".
 - **[Tier 1] Search tracking** — Shopify espone `analytics.subscribe('search_submitted', ...)` con `event.data.searchResult.query`. Mappa a GA4 standard `search` event con `search_term`. Ecommerce-critico per merchant con catalogo medio-grande: capire cosa la gente cerca → roadmap prodotti. ~15min.
 - **[Tier 2] Promotion tracking** (`view_promotion`, `select_promotion`) — quando l'utente vede/clicca un banner promo (homepage hero, "10% off summer"). Richiede di instrumentare i banner con `data-promotion-id` + nome via Liquid; click delegate sulla storefront e dispatch per `view_promotion` su intersection observer.
@@ -373,7 +428,7 @@ Raggruppato per tema così il reviewer può scorrere alla parte che gli interess
 ## 12. Collegamento a GTM/GA4 in produzione
 
 1. **Setup GTM container**: importare `docs/gtm-container.json` in un nuovo container web (Admin → Import Container → Choose file). Sostituire `G-XXXXXXX` con il proprio Measurement ID GA4. Il template, una volta importato, dovrebbe replicare la struttura dei [screenshots `04..08`](screenshots_1/) (6 GA4 Event tag + 6 Custom Event trigger + 4 DLV `ecommerce.*` variables).
-2. **Estendere container**: il template include 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 2 checkout events (begin_checkout, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay → niente tag GTM richiesto.
+2. **Estendere container**: il template include 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 4 checkout events (begin_checkout, add_shipping_info, add_payment_info, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay → niente tag GTM richiesto.
 3. **GA4 property config**: creare property → Web data stream → enhanced measurement attivo. Misurare con `Realtime` + `DebugView` durante test.
 4. **Measurement Protocol API secret**: Admin → Data streams → click stream → "Measurement Protocol API secrets" → Create. Inserire in `.env` come `GA4_API_SECRET` (consumato server-side dal relay, mai esposto al client).
 5. **DNS/CSP**: whitelist `googletagmanager.com`, `google-analytics.com`. Se CSP attivo nel tema, aggiungere headers via `extensions/ga4-datalayer/blocks/ga4-embed.liquid`.
