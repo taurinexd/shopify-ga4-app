@@ -16,16 +16,17 @@ npm run build:ext      # bundle production storefront (vite)
 
 ### 1.1 Dev store live
 
-L'implementazione è attiva e validata end-to-end su `ga4-challenge-dev.myshopify.com` (Dawn, 13 prodotti, 1 multi-variante 5 colori, EUR, Bogus Gateway). Aprendo qualunque pagina con `?ga4_debug=1` compare l'overlay shadow-DOM bottom-right con timeline degli eventi e payload espandibili (vedi [`screenshots_1/17-storefront-overlay-events-expanded.png`](screenshots_1/17-storefront-overlay-events-expanded.png)). Le credenziali per la storefront password (la dev store è gated come da default Shopify) sono nella mail di consegna.
+L'implementazione è attiva e validata end-to-end su `ga4-challenge-dev.myshopify.com` (Dawn, 13 prodotti, 1 multi-variante 5 colori, EUR, Bogus Gateway). Aprendo qualunque pagina con `?ga4_debug=1` compare l'overlay shadow-DOM bottom-right con timeline degli eventi e payload espandibili (vedi [`screenshots_1/21-storefront-overlay-events-expanded.png`](screenshots_1/21-storefront-overlay-events-expanded.png)). Le credenziali per la storefront password (la dev store è gated come da default Shopify) sono nella mail di consegna.
 
 ### 1.2 Screenshots di riferimento
 
-La cartella [`screenshots_1/`](screenshots_1/) contiene 17 screenshot della soluzione end-to-end, raggruppati in:
+La cartella [`screenshots_1/`](screenshots_1/) contiene 21 screenshot della soluzione end-to-end, raggruppati in:
 
-- **01–03** GA4: panoramica eventi Realtime, utenti attivi, drilldown params di un `purchase`
-- **04–08** GTM container Storefront: tag, trigger, variabili, cartelle, panoramica
-- **09–14** Shopify: Partners app versions (release `ga4-datalayer-18`), admin status panel custom (Polaris), themes, app overview, customer privacy con banner, theme embed block on
-- **15–17** Infrastruttura: deploy Vercel, repo GitHub con CI verde, overlay sulla storefront in modalità GA
+- **01–03** GA4 Realtime: panoramica eventi, utenti attivi, drilldown params di un `purchase`
+- **04–07** GA4 Reports → Aumentare le vendite: panoramica revenue, articoli più venduti, purchase journey completo, checkout funnel (post-aggiunta `add_shipping_info`/`add_payment_info`)
+- **08–12** GTM container Storefront: tag, trigger, variabili, cartelle, panoramica
+- **13–18** Shopify: Partners app versions, admin status panel custom (Polaris), themes, app overview, customer privacy con banner, theme embed block on
+- **19–21** Infrastruttura: deploy Vercel, repo GitHub con CI verde, overlay sulla storefront in modalità GA
 
 ## 2. Setup completo (richiede Partners account)
 
@@ -56,8 +57,8 @@ Nel dev store admin: Online Store → Themes → Customize → App embeds → to
 
 Vedi `docs/architecture.md` per il diagramma Mermaid completo. In sintesi:
 
-- **Storefront** (Theme App Extension `ga4-datalayer`) → `window.dataLayer` → GTM → GA4. Il GTM container Storefront è configurato con 6 tag GA4 + 6 Custom Event triggers + 4 DLV variables, vedi [`screenshots_1/04..08`](screenshots_1/).
-- **Checkout** (App Pixel `ga4-pixel`, Strict sandbox) → cross-origin POST a `shopify-ga4-relay.vercel.app/api/collect` → GA4 Measurement Protocol (api_secret server-side). Deploy Vercel attivo: [`screenshots_1/15-vercel-relay-deployment.png`](screenshots_1/15-vercel-relay-deployment.png).
+- **Storefront** (Theme App Extension `ga4-datalayer`) → `window.dataLayer` → GTM → GA4. Il GTM container Storefront è configurato con 6 tag GA4 + 6 Custom Event triggers + 4 DLV variables, vedi [`screenshots_1/08..12`](screenshots_1/).
+- **Checkout** (App Pixel `ga4-pixel`, Strict sandbox) → cross-origin POST a `shopify-ga4-relay.vercel.app/api/collect` → GA4 Measurement Protocol (api_secret server-side). Deploy Vercel attivo: [`screenshots_1/19-vercel-relay-deployment.png`](screenshots_1/19-vercel-relay-deployment.png).
 - App Proxy relay (`app/routes/apps.ga4-relay.$.tsx`) **kept come reference signed-HMAC**, ma non usato dal pixel: la sandbox Strict throwa `RestrictedUrlError` su qualsiasi fetch verso `<shop>.myshopify.com/apps/...`. Cross-origin a Vercel è l'unico path raggiungibile.
 - Identità cross-domain via `cart.attributes.ga4_cid` (no third-party cookie)
 - Validazione Zod no-leak, debug overlay shadow-DOM, console snippet copy-pastable
@@ -81,7 +82,7 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 
 ## 6. Esempi di payload
 
-> Payload reali catturati sul dev store `ga4-challenge-dev.myshopify.com` durante i test del 2026-04-29: stessi product ID, vendor, prezzi e collezione `all` degli screenshot `01-03` (GA4 Realtime) e `17` (overlay).
+> Payload reali catturati sul dev store `ga4-challenge-dev.myshopify.com` durante i test del 2026-04-29: stessi product ID, vendor, prezzi e collezione `all` degli screenshot `01-07` (GA4 Realtime + Reports) e `21` (overlay storefront).
 
 ### view_item_list (PLP `/collections/all`)
 ```json
@@ -304,10 +305,10 @@ Entry point: `src/entry.ts`. Liquid handoff: `extensions/ga4-datalayer/blocks/ga
 Tre layer (vedi `src/datalayer/core.ts` + `src/debug/overlay.ts` + `docs/gtm-debug-snippet.js`):
 
 1. **Zod schema runtime + safePush no-leak** — eventi invalidi droppati dal main `dataLayer`, tracciati su `window.dataLayer_debug` (mai inviati a GA4)
-2. **Debug overlay shadow-DOM** — `?ga4_debug=1` attiva un widget bottom-right con tabella eventi, validation status, expand payload, copy JSON. Filtro a 3 stati (GA / GTM / All) per separare gli 8 eventi GA4 dal rumore GTM lifecycle (`gtm.js`, `gtm.dom`, `gtm.linkClick`, ecc.); Copy/Clear rispettano il filtro corrente. Live: [`screenshots_1/17-storefront-overlay-events-expanded.png`](screenshots_1/17-storefront-overlay-events-expanded.png).
+2. **Debug overlay shadow-DOM** — `?ga4_debug=1` attiva un widget bottom-right con tabella eventi, validation status, expand payload, copy JSON. Filtro a 3 stati (GA / GTM / All) per separare gli eventi GA4 dal rumore GTM lifecycle (`gtm.js`, `gtm.dom`, `gtm.linkClick`, ecc.); Copy/Clear rispettano il filtro corrente. Live: [`screenshots_1/21-storefront-overlay-events-expanded.png`](screenshots_1/21-storefront-overlay-events-expanded.png).
 3. **Console snippet** — `docs/gtm-debug-snippet.js`, copy-paste in console di qualunque store. Espone `window.GA4Audit = { last, dump, dumpDropped, counts, validate }`
 
-Validation in produzione: GA4 Realtime mostra eventi e param drilldown end-to-end ([`01-ga4-realtime-overview-events.png`](screenshots_1/01-ga4-realtime-overview-events.png) + [`03-ga4-realtime-purchase-event-params.png`](screenshots_1/03-ga4-realtime-purchase-event-params.png)).
+Validation in produzione: GA4 Realtime mostra eventi e param drilldown end-to-end ([`01-ga4-realtime-overview-events.png`](screenshots_1/01-ga4-realtime-overview-events.png) + [`03-ga4-realtime-purchase-event-params.png`](screenshots_1/03-ga4-realtime-purchase-event-params.png)). I report standard "Aumentare le vendite" mostrano poi il funnel aggregato: panoramica revenue ([`04`](screenshots_1/04-ga4-reports-sales-overview.png)), articoli più venduti per nome ([`05`](screenshots_1/05-ga4-reports-item-sales.png)), purchase journey ([`06`](screenshots_1/06-ga4-reports-purchase-journey.png)), checkout step-by-step ([`07`](screenshots_1/07-ga4-reports-checkout-journey.png)).
 
 Esempio audit output:
 ```
@@ -374,7 +375,7 @@ Format: **problema** → **analisi** → **soluzione**.
   - **Soluzione:** due fix incrementali. (1) `entry.server.tsx` ora `await import('./shopify.server')` dinamico — `handleRequest` fires solo per route HTML, quindi /api/collect non triggera più il chain di import. (2) `app/shopify.server.ts` aggancia un terminal `.catch(() => undefined)` su `sessionStorage.ready` per neutralizzare la rejection a livello runtime; le route che genuinamente usano la session table (admin, auth, webhooks) continuano a fare `await sessionStorage.ready` e ricevono il `MissingSessionTableError` originale come prima.
 
 - **GA4 `Percorso di pagamento` mostrava 3/4 step a 0% — mancavano 2 eventi standard**
-  - **Problema:** validando i dati via GA4 → Reports → Aumentare le vendite → `Percorso di pagamento`, gli step `Aggiungi spedizione` e `Aggiungi metodo di pagamento` risultavano sempre vuoti (drop-off 100% allo step `Inizia pagamento`), e `Acquista` veniva conteggiato solo via `canalizzazione aperta` perché la sequenza chiusa si rompeva a metà funnel. Il merchant non poteva rispondere alla domanda *"a che punto del checkout perdo i buyer?"* — la canalizzazione era cieca tra ingresso checkout e ordine completato.
+  - **Problema:** validando i dati via GA4 → Reports → Aumentare le vendite → `Percorso di pagamento` ([screenshot 07](screenshots_1/07-ga4-reports-checkout-journey.png)), gli step `Aggiungi spedizione` e `Aggiungi metodo di pagamento` risultavano vuoti (drop-off 100% allo step `Inizia pagamento`), e `Acquista` veniva conteggiato solo via `canalizzazione aperta` perché la sequenza chiusa si rompeva a metà funnel. Il merchant non poteva rispondere alla domanda *"a che punto del checkout perdo i buyer?"* — la canalizzazione era cieca tra ingresso checkout e ordine completato.
   - **Analisi:** brief richiede esplicitamente solo `begin_checkout` e `purchase`, ma la canalizzazione standard di GA4 si aspetta i 2 step intermedi `add_shipping_info` e `add_payment_info` per raccontare il funnel. Senza, qualunque report cross-step (Funnel exploration, Percorso di pagamento, Looker Studio dashboard) collassa tra l'inizio e la fine del checkout.
   - **Soluzione:** 2 nuove `analytics.subscribe()` nel pixel — `checkout_shipping_info_submitted` → `add_shipping_info` (con `shipping_tier` da `shippingLine.title`), `payment_info_submitted` → `add_payment_info` (con `payment_type` da `transactions[0].gateway`, fallback su `paymentMethod.{name,type}` per coprire gateway diversi). Allowlist relay `app/routes/api.collect.tsx` estesa da 2 a 4 eventi. Va oltre i requisiti esplicitati dal brief; senza, il funnel report di GA4 resta cieco a metà checkout — per due righe di codice in più ha senso averlo coperto.
 
@@ -425,14 +426,14 @@ Format: **problema** → **analisi** → **soluzione**.
 
 ## 12. Collegamento a GTM/GA4 in produzione
 
-1. **Setup GTM container**: importare `docs/gtm-container.json` in un nuovo container web (Admin → Import Container → Choose file). Sostituire `G-XXXXXXX` con il proprio Measurement ID GA4. Il template, una volta importato, dovrebbe replicare la struttura dei [screenshots `04..08`](screenshots_1/) (6 GA4 Event tag + 6 Custom Event trigger + 4 DLV `ecommerce.*` variables).
+1. **Setup GTM container**: importare `docs/gtm-container.json` in un nuovo container web (Admin → Import Container → Choose file). Sostituire `G-XXXXXXX` con il proprio Measurement ID GA4. Il template, una volta importato, dovrebbe replicare la struttura dei [screenshots `08..12`](screenshots_1/) (6 GA4 Event tag + 6 Custom Event trigger + 4 DLV `ecommerce.*` variables).
 2. **Estendere container**: il template include i 6 eventi storefront (view_item_list, select_item, view_item, add_to_cart, remove_from_cart, view_cart). I 4 eventi checkout (begin_checkout, add_shipping_info, add_payment_info, purchase) vanno direttamente a GA4 Measurement Protocol via Vercel relay, quindi non servono tag GTM per loro.
 3. **GA4 property config**: creare property → Web data stream → enhanced measurement attivo. Misurare con `Realtime` + `DebugView` durante test.
 4. **Measurement Protocol API secret**: Admin → Data streams → click stream → "Measurement Protocol API secrets" → Create. Inserire in `.env` come `GA4_API_SECRET` (consumato server-side dal relay, mai esposto al client).
 5. **DNS/CSP**: whitelist `googletagmanager.com`, `google-analytics.com`. Se CSP attivo nel tema, aggiungere headers via `extensions/ga4-datalayer/blocks/ga4-embed.liquid`.
 6. **Consent Mode v2 setup**: collegare a CMP (Cookiebot, OneTrust, ecc.) o usare Shopify Customer Privacy API. Il wrapper `applyConsentDefaults()` parte denied; aggiornare via `updateConsent()` dopo scelta utente.
 7. **Relay config**: il pixel chiama `https://<your-vercel-host>/api/collect` cross-origin (`relayUrl` in `extensions/ga4-pixel/src/index.ts`). Per prod: deploy Remix app su Vercel/Fly, settare `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` come env vars server-side. CORS allowlist nel relay accetta `*.myshopify.com` + `*.shopifyapps.com` (origin Shopify pixel sandbox).
-8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9). Setup admin: [`screenshots_1/13-shopify-admin-customer-privacy.png`](screenshots_1/13-shopify-admin-customer-privacy.png). Theme app embed e GTM Container ID: [`screenshots_1/14-shopify-theme-app-embed-toggle.png`](screenshots_1/14-shopify-theme-app-embed-toggle.png). Release history: [`screenshots_1/09-shopify-partners-app-versions.png`](screenshots_1/09-shopify-partners-app-versions.png).
+8. **Customer Privacy banner**: Settings → Markets → assicurarsi che esista almeno un selling region regolamentato (EU/UK/CA) → Settings → Customer privacy → toggle "Show cookie banner" + scegliere "Allow / Decline" (o "Allow / Customize"). Senza, i visitatori EU ricevono `analyticsProcessingAllowed === undefined` e il pixel Strict non viene mai caricato (vedi §9). Setup admin: [`screenshots_1/17-shopify-admin-customer-privacy.png`](screenshots_1/17-shopify-admin-customer-privacy.png). Theme app embed e GTM Container ID: [`screenshots_1/18-shopify-theme-app-embed-toggle.png`](screenshots_1/18-shopify-theme-app-embed-toggle.png). Release history: [`screenshots_1/13-shopify-partners-app-versions.png`](screenshots_1/13-shopify-partners-app-versions.png).
 9. **QA pre-go-live checklist**:
    - [ ] Snippet console (`docs/gtm-debug-snippet.js`) ritorna `GA4Audit.validate() === { ok: true }` su tutte le 6 page type storefront
    - [ ] GA4 Realtime mostra `view_item_list`, `view_item`, `add_to_cart`, `view_cart`, `begin_checkout`, `purchase` con currency/value/items popolati
