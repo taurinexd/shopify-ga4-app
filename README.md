@@ -320,9 +320,9 @@ Type GA4Audit.last("view_item") for last payload
 
 ## 8. Magento 2 vs Shopify
 
-Confronto completo in `docs/magento-vs-shopify.md` su 8 pillar architetturali.
+La mia esperienza pratica è su altre piattaforme e-commerce, non su Magento 2. Il brief mi chiede un confronto architetturale e ci ho ragionato leggendo Adobe Commerce DevDocs e il modulo open-source `Magento_GoogleTagManager`, ma preferisco non includere un confronto dettagliato basato solo su documentazione: in un colloquio non avrei la base per difenderlo onestamente.
 
-> Premessa: la mia esperienza pratica è su altre piattaforme, non Magento 2. Il confronto è ricostruito da Adobe Commerce DevDocs e dal codice open-source di `Magento_GoogleTagManager`; lo specifico in apertura del doc per chiarezza.
+Sono disponibile a discutere a voce le differenze architetturali principali — il modello di iniezione script (layout XML + observers su M2 vs theme app extension + Customer Events su Shopify), `customer-data` section invalidation vs cart polling Ajax, service contracts `@api` vs Liquid + GraphQL — dove posso esplicitare cosa so per esperienza diretta e cosa sto deducendo.
 
 ## 9. Problemi incontrati e risoluzioni
 
@@ -443,7 +443,7 @@ Format: **problema** → **analisi** → **soluzione**.
 
 ## 13. Tempo totale impiegato
 
-**~32-36h.**
+**~31-35h.**
 
 Breakdown:
 - Bootstrap (scaffold, deps, configs, smoke deploy): ~3h
@@ -457,7 +457,7 @@ Breakdown:
 - Admin status panel (Polaris): ~1h
 - Playwright e2e + globalSetup auth bypass: ~2h
 - CI workflows: ~0.5h
-- Architecture diagram + M2-vs-Shopify research-based + GTM container template: ~2.5h
+- Architecture diagram + GTM container template: ~1.5h
 - README + final smoke + screenshots: ~1.5h
 - Pixel deploy production Vercel + cross-origin pivot da App Proxy: ~2h
 - Debug end-to-end GA4 ingest (item_variant null + Prisma session storage): ~3.5h
